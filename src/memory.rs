@@ -30,7 +30,6 @@
 
 mod mem_error;
 use mem_error::MemoryOperation;
-use std::error::Error;
 
 /**
  * trait for the emulated memory exposed by the cpu.
@@ -64,16 +63,16 @@ pub trait Memory {
 }
 
 /**
- * implements the Memory trait.
+ * default implementation of the Memory trait.
  *
  * > *(default implementation)*
  */
-pub(crate) struct EmulatedMemory {
+pub(crate) struct DefaultMemory {
     size: usize,
     m: Vec<u8>,
 }
 
-impl Memory for EmulatedMemory {
+impl Memory for DefaultMemory {
     fn read_byte(&self, address: usize) -> Result<u8, mem_error::MemoryError> {
         mem_error::check_address(self, address, 1, MemoryOperation::Read)?;
         Ok(self.m[address])
@@ -110,5 +109,7 @@ pub fn new(size: usize) -> impl Memory {
     for _ in 0..size {
         v.push(0)
     }
-    EmulatedMemory { size: size, m: v }
+
+    let m = DefaultMemory { size: size, m: v };
+    m
 }

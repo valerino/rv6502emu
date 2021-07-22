@@ -1,24 +1,36 @@
+use rv6502emu::bus;
+use rv6502emu::bus::Bus;
 use rv6502emu::cpu::Cpu;
 use rv6502emu::memory;
 use rv6502emu::memory::Memory;
 
 fn tt(mem: &mut Memory) {
-    mem.write_byte(123, 0xbb);
     let b = mem.read_byte(123).unwrap();
     println!("b after write 2={:x}", b);
 }
 
 #[test]
 fn test_cpu() {
+    // create a new memory and a bus with it attached
     let mut m = memory::new(1234);
-    let mut c = Cpu::new(&mut m);
+    let mut b = bus::new(Box::new(m));
 
-    let c_mem = c.mm();
-    let mut b = c_mem.read_byte(123).unwrap();
+    // creates a new cpu with the given bus
+    let bb = Box::new(b);
+    let c = Cpu::new(&bb);
+
+    // some read and writes
+    let mem = b.memory();
+    let mut b = mem.read_byte(123).unwrap();
     println!("b after read ={}", b);
-    c_mem.write_byte(123, 0xaa);
+    mem.write_byte(123, 0xaa);
 
-    b = c_mem.read_byte(123).unwrap();
+    // read again
+    b = mem.read_byte(123).unwrap();
     println!("b after write={:x}", b);
-    tt(c_mem)
+
+    // some read and writes in a function
+    tt(mem);
+    mem.write_byte(123, 0xfc);
+    tt(mem)
 }

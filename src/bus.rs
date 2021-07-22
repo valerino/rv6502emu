@@ -1,7 +1,7 @@
 /*
- * Filename: /src/lib.rs
+ * Filename: /src/bus.rs
  * Project: rv6502emu
- * Created Date: Saturday, July 3rd 2021, 10:44:18 am
+ * Created Date: Thursday, January 1st 1970, 1:00:00 am
  * Author: valerino <xoanino@gmail.com>
  * Copyright (c) 2021 valerino
  *
@@ -28,15 +28,35 @@
  * SOFTWARE.
  */
 
-//! implements a MOS6502 CPU emulator.
+use crate::memory::Memory;
 
-/// implements the cpu.
-pub mod cpu;
+/**
+ * this is the default Bus trait which only exposes memory
+ */
+pub trait Bus {
+    /**
+     * gets the emulated memory
+     */
+    fn memory(&mut self) -> &Box<dyn Memory>;
+}
 
-/// implements the emulated memory.
-pub mod memory;
+/**
+ * creates a new default bus with the given Memory attached
+ */
+pub fn new(mem: &Box<dyn Memory>) -> impl Bus {
+    let b = DefaultBus { m: mem };
+    b
+}
 
-/// implements the emulated bus
-pub mod bus;
+/**
+ * implements the default Bus exposing Memory only.
+ */
+pub(crate) struct DefaultBus<'a> {
+    m: &'a Box<dyn Memory>,
+}
 
-mod utils;
+impl<'a> Bus for DefaultBus<'a> {
+    fn memory(&mut self) -> &Box<dyn Memory> {
+        &mut *self.m
+    }
+}
