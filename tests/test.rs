@@ -4,7 +4,7 @@ use rv6502emu::cpu::Cpu;
 use rv6502emu::memory;
 use rv6502emu::memory::Memory;
 
-fn tt(mem: &mut Memory) {
+fn tt(mem: &mut Box<dyn Memory>) {
     let b = mem.read_byte(123).unwrap();
     println!("b after write 2={:x}", b);
 }
@@ -12,15 +12,14 @@ fn tt(mem: &mut Memory) {
 #[test]
 fn test_cpu() {
     // create a new memory and a bus with it attached
-    let mut m = memory::new(1234);
-    let mut b = bus::new(Box::new(m));
+    let m = Box::new(memory::new(1234));
+    let b = bus::new(m);
 
     // creates a new cpu with the given bus
-    let bb = Box::new(b);
-    let c = Cpu::new(&bb);
+    let mut c = Cpu::new(b);
 
     // some read and writes
-    let mem = b.memory();
+    let mut mem = c.bus().memory();
     let mut b = mem.read_byte(123).unwrap();
     println!("b after read ={}", b);
     mem.write_byte(123, 0xaa);
@@ -30,7 +29,7 @@ fn test_cpu() {
     println!("b after write={:x}", b);
 
     // some read and writes in a function
-    tt(mem);
+    tt(&mut mem);
     mem.write_byte(123, 0xfc);
-    tt(mem)
+    tt(&mut mem)
 }

@@ -37,26 +37,26 @@ pub trait Bus {
     /**
      * gets the emulated memory
      */
-    fn memory(&mut self) -> &Box<dyn Memory>;
+    fn memory(&mut self) -> &mut Box<dyn Memory>;
 }
 
 /**
  * creates a new default bus with the given Memory attached
  */
-pub fn new(mem: &Box<dyn Memory>) -> impl Bus {
+pub fn new(mem: Box<dyn Memory>) -> Box<dyn Bus> {
     let b = DefaultBus { m: mem };
-    b
+    Box::new(b)
 }
 
 /**
  * implements the default Bus exposing Memory only.
  */
-pub(crate) struct DefaultBus<'a> {
-    m: &'a Box<dyn Memory>,
+pub(crate) struct DefaultBus {
+    m: Box<dyn Memory>,
 }
 
-impl<'a> Bus for DefaultBus<'a> {
-    fn memory(&mut self) -> &Box<dyn Memory> {
-        &mut *self.m
+impl Bus for DefaultBus {
+    fn memory(&mut self) -> &mut Box<dyn Memory> {
+        &mut self.m
     }
 }

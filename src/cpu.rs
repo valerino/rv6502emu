@@ -27,18 +27,18 @@ impl Registers {
 /**
  * implements the cpu.
  */
-pub struct Cpu<'a> {
+pub struct Cpu {
     regs: Registers,
     cycles: usize,
     //b: &'a dyn Bus,
-    b: &'a Box<dyn Bus>,
+    b: Box<dyn Bus>,
 }
 
-impl<'a> Cpu<'a> {
+impl Cpu {
     /**
      * creates a new cpu instance
      */
-    pub fn new(b: &Box<dyn Bus>) -> Cpu {
+    pub fn new(b: Box<dyn Bus>) -> Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
@@ -50,7 +50,7 @@ impl<'a> Cpu<'a> {
     /**
      * gets the underlying bus
      */
-    pub fn bus(&self) -> &Box<dyn Bus> {
-        self.b
+    pub fn bus(&mut self) -> &mut Box<dyn Bus> {
+        &mut self.b
     }
 }
