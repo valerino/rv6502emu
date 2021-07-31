@@ -94,11 +94,14 @@ pub fn check_address(
     access_size: usize,
     op: MemoryOperation,
 ) -> Result<(), MemoryError> {
-    if address + access_size > mem.get_size() {
+    // check if memory access overflows
+    let mem_size = mem.get_size();
+    if address + access_size > mem_size {
+        // overflow
         let e = MemoryError {
             operation: op,
             address: address,
-            mem_size: mem.get_size(),
+            mem_size: mem_size,
             access_size: access_size,
             msg: String::from(""),
         };

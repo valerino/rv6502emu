@@ -28,9 +28,14 @@ impl Registers {
  * implements the cpu.
  */
 pub struct Cpu {
-    regs: Registers,
-    cycles: usize,
-    bus: Box<dyn Bus>,
+    /// cpu registers
+    pub regs: Registers,
+
+    /// current cpu cycles
+    pub cycles: usize,
+
+    /// the bus
+    pub bus: Box<dyn Bus>,
 }
 
 impl Cpu {
@@ -44,26 +49,5 @@ impl Cpu {
             bus: b,
         };
         c
-    }
-
-    /**
-     * gets the bus
-     */
-    pub fn get_bus(&mut self) -> &mut Box<dyn Bus> {
-        &mut self.bus
-    }
-
-    /**
-     * gets the current cpu cycles
-     */
-    pub fn get_cycles(&self) -> usize {
-        self.cycles
-    }
-
-    /**
-     * gets the registers
-     */
-    pub fn get_registers(&self) -> &Registers {
-        &self.regs
     }
 }

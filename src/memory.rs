@@ -28,8 +28,11 @@
  * SOFTWARE.
  */
 
-mod mem_error;
+pub mod mem_error;
 use mem_error::MemoryOperation;
+use std::fs;
+use std::fs::{File, Metadata};
+use std::io::prelude::*;
 
 /**
  * trait for the emulated memory exposed by the cpu.
@@ -59,7 +62,7 @@ pub trait Memory {
     /**
      * load file at address
      */
-    fn load(&self, path: &str) -> Result<(), mem_error::MemoryError>;
+    fn load(&mut self, path: &str, address: usize) -> Result<(), mem_error::MemoryError>;
 }
 
 /**
@@ -67,7 +70,7 @@ pub trait Memory {
  *
  * > *(default implementation)*
  */
-pub struct DefaultMemory {
+struct DefaultMemory {
     size: usize,
     m: Vec<u8>,
 }
@@ -95,7 +98,18 @@ impl Memory for DefaultMemory {
         self.size
     }
 
-    fn load(&self, path: &str) -> Result<(), mem_error::MemoryError> {
+    fn load(&mut self, path: &str, address: usize) -> Result<(), mem_error::MemoryError> {
+        // check filesize
+        let attr = fs::metadata(path)?;
+        mem_error::check_address(self, address, attr.len() as usize, MemoryOperation::Load)?;
+
+        // read file to a tmp vec
+        let mut f = File::open(path)?;
+        let mut tmp: Vec<u8> = Vec::new();
+        f.read_to_end(&mut tmp)?;
+
+        // read in memory at the given offset
+        self.m.splice(address..attr.len() as usize, tmp);
         Ok(())
     }
 }
@@ -103,7 +117,7 @@ impl Memory for DefaultMemory {
 /**
  * returns an istance of Memory with the given size
  */
-pub fn new(size: usize) -> Box<dyn Memory> {
+pub fn new_default(size: usize) -> Box<dyn Memory> {
     // create memory and zero it
     let mut v = Vec::with_capacity(size);
     for _ in 0..size {

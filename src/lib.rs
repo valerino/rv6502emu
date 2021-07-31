@@ -38,5 +38,3 @@ pub mod memory;
 
 /// implements the emulated bus
 pub mod bus;
-
-mod utils;

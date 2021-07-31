@@ -43,7 +43,7 @@ pub trait Bus {
 /**
  * implements the default Bus exposing Memory only.
  */
-pub struct DefaultBus {
+struct DefaultBus {
     m: Box<dyn Memory>,
 }
 
@@ -56,7 +56,7 @@ impl Bus for DefaultBus {
 /**
  * creates a new default bus with the given Memory attached
  */
-pub fn new(mem: Box<dyn Memory>) -> Box<dyn Bus> {
+pub fn new_default(mem: Box<dyn Memory>) -> Box<dyn Bus> {
     let b = DefaultBus { m: mem };
     Box::new(b)
 }
