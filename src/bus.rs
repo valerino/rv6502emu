@@ -31,11 +31,11 @@
 use crate::memory::Memory;
 
 /**
- * a Bus must expose at least Memory
+ * a Bus is connected to the Cpu, and must expose at least a Memory interface.
  */
 pub trait Bus {
     /**
-     * gets the emulated memory
+     * gets the emulated memory.
      */
     fn get_memory(&mut self) -> &mut Box<dyn Memory>;
 }
@@ -54,7 +54,7 @@ impl Bus for DefaultBus {
 }
 
 /**
- * creates a new default bus with the given Memory attached
+ * creates a new default bus with the given Memory attached.
  */
 pub fn new_default(mem: Box<dyn Memory>) -> Box<dyn Bus> {
     let b = DefaultBus { m: mem };

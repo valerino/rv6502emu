@@ -1,7 +1,7 @@
 use crate::bus::Bus;
 
 /**
- * the cpu registers
+ * the cpu registers.
  */
 pub struct Registers {
     pub x: u8,
@@ -28,19 +28,19 @@ impl Registers {
  * implements the cpu.
  */
 pub struct Cpu {
-    /// cpu registers
+    /// cpu registers.
     pub regs: Registers,
 
-    /// current cpu cycles
+    /// current cpu cycles.
     pub cycles: usize,
 
-    /// the bus
+    /// the bus.
     pub bus: Box<dyn Bus>,
 }
 
 impl Cpu {
     /**
-     * creates a new cpu instance
+     * creates a new cpu instance, with the given Bus attached.
      */
     pub fn new(b: Box<dyn Bus>) -> Cpu {
         let c = Cpu {

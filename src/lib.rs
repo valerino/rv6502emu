@@ -36,5 +36,5 @@ pub mod cpu;
 /// implements the emulated memory.
 pub mod memory;
 
-/// implements the emulated bus
+/// implements the emulated bus.
 pub mod bus;

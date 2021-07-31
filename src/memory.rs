@@ -28,10 +28,9 @@
  * SOFTWARE.
  */
 
-pub mod mem_error;
-use mem_error::MemoryOperation;
-use std::fs;
-use std::fs::{File, Metadata};
+pub mod memory_error;
+use memory_error::{MemoryError, MemoryOperation};
+use std::fs::File;
 use std::io::prelude::*;
 
 /**
@@ -40,35 +39,33 @@ use std::io::prelude::*;
  */
 pub trait Memory {
     /**
-     * reads a byte at address
+     * reads a byte at address.
      */
-    fn read_byte(&self, address: usize) -> Result<u8, mem_error::MemoryError>;
+    fn read_byte(&self, address: usize) -> Result<u8, MemoryError>;
 
     /**
-     * reads a word (little-endian) at address
+     * reads a word (little-endian) at address.
      */
-    fn read_word_le(&self, address: usize) -> Result<u16, mem_error::MemoryError>;
+    fn read_word_le(&self, address: usize) -> Result<u16, MemoryError>;
 
     /**
-     * writes a byte at address
+     * writes a byte at address.
      */
-    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), mem_error::MemoryError>;
+    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), MemoryError>;
 
     /**
-     * get memory size
+     * get memory size.
      */
     fn get_size(&self) -> usize;
 
     /**
-     * load file at address
+     * load file in memory at address.
      */
-    fn load(&mut self, path: &str, address: usize) -> Result<(), mem_error::MemoryError>;
+    fn load(&mut self, path: &str, address: usize) -> Result<(), MemoryError>;
 }
 
 /**
- * implementation of the Memory trait.
- *
- * > *(default implementation)*
+ * default implementation of the Memory trait.
  */
 struct DefaultMemory {
     size: usize,
@@ -76,20 +73,20 @@ struct DefaultMemory {
 }
 
 impl Memory for DefaultMemory {
-    fn read_byte(&self, address: usize) -> Result<u8, mem_error::MemoryError> {
-        mem_error::check_address(self, address, 1, MemoryOperation::Read)?;
+    fn read_byte(&self, address: usize) -> Result<u8, MemoryError> {
+        memory_error::check_address(self, address, 1, MemoryOperation::Read)?;
         Ok(self.m[address])
     }
 
-    fn read_word_le(&self, address: usize) -> Result<u16, mem_error::MemoryError> {
-        mem_error::check_address(self, address, 2, MemoryOperation::Read)?;
+    fn read_word_le(&self, address: usize) -> Result<u16, MemoryError> {
+        memory_error::check_address(self, address, 2, MemoryOperation::Read)?;
         let h: u16 = self.m[address].into();
         let l: u16 = self.m[address + 1].into();
         Ok((h << 8) | l)
     }
 
-    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), mem_error::MemoryError> {
-        mem_error::check_address(self, address, 1, MemoryOperation::Write)?;
+    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), MemoryError> {
+        memory_error::check_address(self, address, 1, MemoryOperation::Write)?;
         self.m[address] = b;
         Ok(())
     }
@@ -98,10 +95,10 @@ impl Memory for DefaultMemory {
         self.size
     }
 
-    fn load(&mut self, path: &str, address: usize) -> Result<(), mem_error::MemoryError> {
+    fn load(&mut self, path: &str, address: usize) -> Result<(), MemoryError> {
         // check filesize
-        let attr = fs::metadata(path)?;
-        mem_error::check_address(self, address, attr.len() as usize, MemoryOperation::Load)?;
+        let attr = std::fs::metadata(path)?;
+        memory_error::check_address(self, address, attr.len() as usize, MemoryOperation::Load)?;
 
         // read file to a tmp vec
         let mut f = File::open(path)?;
@@ -110,13 +107,12 @@ impl Memory for DefaultMemory {
 
         // read in memory at the given offset
         self.m.splice(address..attr.len() as usize, tmp);
-        println!("leeeeeeeeen: {}", self.m.len());
         Ok(())
     }
 }
 
 /**
- * returns an istance of Memory with the given size
+ * returns an istance of DefaultMemory with the given size.
  */
 pub fn new_default(size: usize) -> Box<dyn Memory> {
     // create memory and zero it

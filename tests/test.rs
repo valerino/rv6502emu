@@ -1,7 +1,7 @@
 use rv6502emu::bus;
 use rv6502emu::cpu::Cpu;
 use rv6502emu::memory;
-use rv6502emu::memory::mem_error::MemoryError;
+use rv6502emu::memory::memory_error::MemoryError;
 use rv6502emu::memory::Memory;
 
 fn tt(mem: &Box<dyn Memory>) {
