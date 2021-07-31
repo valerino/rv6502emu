@@ -3,12 +3,12 @@ use crate::bus::Bus;
 /**
  * the cpu registers
  */
-struct Registers {
-    x: u8,
-    y: u8,
-    p: u8,
-    s: u8,
-    pc: u8,
+pub struct Registers {
+    pub x: u8,
+    pub y: u8,
+    pub p: u8,
+    pub s: u8,
+    pub pc: u16,
 }
 
 impl Registers {
@@ -30,8 +30,7 @@ impl Registers {
 pub struct Cpu {
     regs: Registers,
     cycles: usize,
-    //b: &'a dyn Bus,
-    b: Box<dyn Bus>,
+    bus: Box<dyn Bus>,
 }
 
 impl Cpu {
@@ -42,15 +41,29 @@ impl Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
-            b: b,
+            bus: b,
         };
         c
     }
 
     /**
-     * gets the underlying bus
+     * gets the bus
      */
-    pub fn bus(&mut self) -> &mut Box<dyn Bus> {
-        &mut self.b
+    pub fn get_bus(&mut self) -> &mut Box<dyn Bus> {
+        &mut self.bus
+    }
+
+    /**
+     * gets the current cpu cycles
+     */
+    pub fn get_cycles(&self) -> usize {
+        self.cycles
+    }
+
+    /**
+     * gets the registers
+     */
+    pub fn get_registers(&self) -> &Registers {
+        &self.regs
     }
 }

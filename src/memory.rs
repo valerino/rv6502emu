@@ -49,25 +49,25 @@ pub trait Memory {
     /**
      * writes a byte at address
      */
-    fn write_byte(&mut self, address: usize, b: u8) -> Result<bool, mem_error::MemoryError>;
+    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), mem_error::MemoryError>;
 
     /**
      * get memory size
      */
-    fn size(&self) -> usize;
+    fn get_size(&self) -> usize;
 
     /**
      * load file at address
      */
-    fn load(&self, path: &str) -> Result<bool, mem_error::MemoryError>;
+    fn load(&self, path: &str) -> Result<(), mem_error::MemoryError>;
 }
 
 /**
- * default implementation of the Memory trait.
+ * implementation of the Memory trait.
  *
  * > *(default implementation)*
  */
-pub(crate) struct DefaultMemory {
+pub struct DefaultMemory {
     size: usize,
     m: Vec<u8>,
 }
@@ -85,25 +85,25 @@ impl Memory for DefaultMemory {
         Ok((h << 8) | l)
     }
 
-    fn write_byte(&mut self, address: usize, b: u8) -> Result<bool, mem_error::MemoryError> {
+    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), mem_error::MemoryError> {
         mem_error::check_address(self, address, 1, MemoryOperation::Write)?;
         self.m[address] = b;
-        Ok(false)
+        Ok(())
     }
 
-    fn size(&self) -> usize {
+    fn get_size(&self) -> usize {
         self.size
     }
 
-    fn load(&self, path: &str) -> Result<bool, mem_error::MemoryError> {
-        Ok(true)
+    fn load(&self, path: &str) -> Result<(), mem_error::MemoryError> {
+        Ok(())
     }
 }
 
 /**
  * returns an istance of Memory with the given size
  */
-pub fn new(size: usize) -> impl Memory {
+pub fn new(size: usize) -> Box<dyn Memory> {
     // create memory and zero it
     let mut v = Vec::with_capacity(size);
     for _ in 0..size {
@@ -111,5 +111,5 @@ pub fn new(size: usize) -> impl Memory {
     }
 
     let m = DefaultMemory { size: size, m: v };
-    m
+    Box::new(m)
 }

@@ -31,13 +31,26 @@
 use crate::memory::Memory;
 
 /**
- * this is the default Bus trait which only exposes memory
+ * a Bus must expose at least Memory
  */
 pub trait Bus {
     /**
      * gets the emulated memory
      */
-    fn memory(&mut self) -> &mut Box<dyn Memory>;
+    fn get_memory(&mut self) -> &mut Box<dyn Memory>;
+}
+
+/**
+ * implements the default Bus exposing Memory only.
+ */
+pub struct DefaultBus {
+    m: Box<dyn Memory>,
+}
+
+impl Bus for DefaultBus {
+    fn get_memory(&mut self) -> &mut Box<dyn Memory> {
+        &mut self.m
+    }
 }
 
 /**
@@ -46,17 +59,4 @@ pub trait Bus {
 pub fn new(mem: Box<dyn Memory>) -> Box<dyn Bus> {
     let b = DefaultBus { m: mem };
     Box::new(b)
-}
-
-/**
- * implements the default Bus exposing Memory only.
- */
-pub(crate) struct DefaultBus {
-    m: Box<dyn Memory>,
-}
-
-impl Bus for DefaultBus {
-    fn memory(&mut self) -> &mut Box<dyn Memory> {
-        &mut self.m
-    }
 }
