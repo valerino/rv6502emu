@@ -107,6 +107,7 @@ impl Memory for DefaultMemory {
 
         // read in memory at the given offset
         self.m.splice(address..attr.len() as usize, tmp);
+        println!("leeeeeeeeen: {}", self.m.len());
         Ok(())
     }
 }
