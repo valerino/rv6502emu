@@ -24,7 +24,7 @@ fn test_cpu() {
     mem.write_byte(123, 0xaa);
 
     // read again
-    bb = mem.read_byte(123).unwrap();
+    bb = mem.read_byte(44444123).unwrap();
     println!("b after write={:x}", bb);
 
     // some read and writes in a function
