@@ -1,10 +1,20 @@
 use crate::bus::Bus;
+use crate::gui::{DebuggerUi, UiContext};
+use crate::memory::memory_error::MemoryError;
 use crate::memory::Memory;
+use crossbeam_channel::unbounded;
+use crossbeam_channel::{Receiver, Sender};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::fmt::{Display, Error, Formatter};
+use std::prelude::*;
 
 /**
  * the cpu registers.
  */
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Registers {
+    pub a: u8,
     pub x: u8,
     pub y: u8,
     pub p: u8,
@@ -12,9 +22,21 @@ pub struct Registers {
     pub pc: u16,
 }
 
+impl Display for Registers {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(
+            f,
+            "PC: ${:02x}, A: ${:x}, X: ${:x}, Y: ${:x}, P: {:08b}, S: ${:x}",
+            self.pc, self.a, self.x, self.y, self.p, self.s
+        );
+        Ok(())
+    }
+}
+
 impl Registers {
-    fn new() -> Registers {
+    pub fn new() -> Registers {
         let r = Registers {
+            a: 0,
             x: 0,
             y: 0,
             p: 0,
@@ -47,6 +69,12 @@ pub struct Cpu {
 
     /// the bus.
     pub bus: Box<dyn Bus>,
+
+    /// channels for communications TO the ui.
+    pub to_ui_channels: (Sender<UiContext>, Receiver<UiContext>),
+
+    /// channels for communications FROM the ui.
+    pub from_ui_channels: (Sender<UiContext>, Receiver<UiContext>),
 }
 
 impl Cpu {
@@ -58,6 +86,8 @@ impl Cpu {
             regs: Registers::new(),
             cycles: 0,
             bus: b,
+            to_ui_channels: unbounded::<UiContext>(),
+            from_ui_channels: unbounded::<UiContext>(),
         };
         c
     }
@@ -74,9 +104,23 @@ impl Cpu {
     /**
      * resets the cpu setting all registers to the initial values.
      */
-    pub fn reset(&mut self) {
-        //
-        self.regs.pc = Vectors::RESET as u16
+    pub fn reset(&mut self) -> Result<(), MemoryError> {
+        // from https://www.pagetable.com/?p=410
+        self.regs = Registers {
+            a: 0xaa,
+            x: 0,
+            y: 0,
+            p: 0x16,
+            s: 0xfd,
+
+            // at reset, we read PC from RESET vector
+            pc: self
+                .bus
+                .get_memory()
+                .read_word_le(Vectors::RESET as usize)?,
+        };
+        println!("{}", self.regs);
+        Ok(())
     }
 
     /**

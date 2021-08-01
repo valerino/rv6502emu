@@ -33,6 +33,9 @@
 /// implements the cpu.
 pub mod cpu;
 
+// the gui interface.
+pub mod gui;
+
 /// implements the emulated memory.
 pub mod memory;
 
