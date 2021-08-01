@@ -1,4 +1,5 @@
 use crate::bus::Bus;
+use crate::memory::Memory;
 
 /**
  * the cpu registers.
@@ -49,5 +50,14 @@ impl Cpu {
             bus: b,
         };
         c
+    }
+
+    /**
+     * creates a new cpu instance, with the given Bus attached, exposing a Memory of the given size.
+     */
+    pub fn new_default(mem_size: usize) -> Cpu {
+        let m = super::memory::new_default(mem_size);
+        let b = super::bus::new_default(m);
+        Cpu::new(b)
     }
 }
