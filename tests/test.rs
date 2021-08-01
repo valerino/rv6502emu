@@ -4,28 +4,24 @@ use rv6502emu::memory;
 use rv6502emu::memory::memory_error::MemoryError;
 use rv6502emu::memory::Memory;
 
-fn tt(mem: &Box<dyn Memory>) {
+fn tt(mem: &mut Box<dyn Memory>) {
     let b = mem.read_byte(123).unwrap();
     println!("b after write 2={:x}", b);
 }
 
 #[test]
 fn test_cpu() {
-    // create a new memory and a bus with it attached
-    let m = memory::new_default(65536);
-    let b = bus::new_default(m);
-
-    // creates a new cpu with the given bus
-    let mut c = Cpu::new(b);
-
+    // create a cpu with default bus and 64k memory
+    let mut c = rv6502emu::cpu::Cpu::new_default(0x10000);
     let mem = c.bus.get_memory();
 
-    // load file
+    // load test file
     mem.load(
         "./tests/6502_65C02_functional_tests/bin_files/6502_functional_test.bin",
         0,
     )
     .unwrap();
+
     // some read and writes
     let mut bb = mem.read_byte(123).unwrap();
     println!("b after read ={}", bb);
@@ -39,4 +35,10 @@ fn test_cpu() {
     tt(mem);
     mem.write_byte(123, 0xfc);
     tt(mem)
+
+    // run test
+    /*
+    loop {
+        c.step(0);
+    }*/
 }

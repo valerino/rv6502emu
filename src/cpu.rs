@@ -26,6 +26,16 @@ impl Registers {
 }
 
 /**
+ * 6502 has 3 vectors (= addresses at which the cpu is directed to perform certain tasks)
+ */
+#[derive(Debug, PartialEq)]
+enum Vectors {
+    NMI = 0xfffa,
+    RESET = 0xfffc,
+    IRQ = 0xfffe,
+}
+
+/**
  * implements the cpu.
  */
 pub struct Cpu {
@@ -60,4 +70,27 @@ impl Cpu {
         let b = super::bus::new_default(m);
         Cpu::new(b)
     }
+
+    /**
+     * resets the cpu setting all registers to the initial values.
+     */
+    pub fn reset(&mut self) {
+        //
+        self.regs.pc = Vectors::RESET as u16
+    }
+
+    /**
+     * run the cpu for the given cycles
+     */
+    pub fn step(&mut self, cycles: usize) {}
+
+    /**
+     * triggers an irq.
+     */
+    pub fn irq(&mut self) {}
+
+    /**
+     * triggers an nmi.
+     */
+    pub fn nmi(&mut self) {}
 }

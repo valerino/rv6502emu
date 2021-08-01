@@ -29,9 +29,11 @@
  */
 
 pub mod memory_error;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use memory_error::{MemoryError, MemoryOperation};
 use std::fs::File;
 use std::io::prelude::*;
+use std::io::Cursor;
 
 /**
  * trait for the emulated memory exposed by the cpu.
@@ -41,12 +43,12 @@ pub trait Memory {
     /**
      * reads a byte at address.
      */
-    fn read_byte(&self, address: usize) -> Result<u8, MemoryError>;
+    fn read_byte(&mut self, address: usize) -> Result<u8, MemoryError>;
 
     /**
      * reads a word (little-endian) at address.
      */
-    fn read_word_le(&self, address: usize) -> Result<u16, MemoryError>;
+    fn read_word_le(&mut self, address: usize) -> Result<u16, MemoryError>;
 
     /**
      * writes a byte at address.
@@ -69,25 +71,31 @@ pub trait Memory {
  */
 struct DefaultMemory {
     size: usize,
-    m: Vec<u8>,
+    cur: Cursor<Vec<u8>>,
 }
 
 impl Memory for DefaultMemory {
-    fn read_byte(&self, address: usize) -> Result<u8, MemoryError> {
+    fn read_byte(&mut self, address: usize) -> Result<u8, MemoryError> {
         memory_error::check_address(self, address, 1, MemoryOperation::Read)?;
-        Ok(self.m[address])
+
+        self.cur.set_position(address as u64);
+        let res = self.cur.read_u8()?;
+        Ok(res)
     }
 
-    fn read_word_le(&self, address: usize) -> Result<u16, MemoryError> {
+    fn read_word_le(&mut self, address: usize) -> Result<u16, MemoryError> {
         memory_error::check_address(self, address, 2, MemoryOperation::Read)?;
-        let h: u16 = self.m[address].into();
-        let l: u16 = self.m[address + 1].into();
-        Ok((h << 8) | l)
+
+        self.cur.set_position(address as u64);
+        let res = self.cur.read_u16::<LittleEndian>()?;
+        Ok(res)
     }
 
     fn write_byte(&mut self, address: usize, b: u8) -> Result<(), MemoryError> {
         memory_error::check_address(self, address, 1, MemoryOperation::Write)?;
-        self.m[address] = b;
+
+        self.cur.set_position(address as u64);
+        self.cur.write_u8(b)?;
         Ok(())
     }
 
@@ -106,7 +114,8 @@ impl Memory for DefaultMemory {
         f.read_to_end(&mut tmp)?;
 
         // read in memory at the given offset
-        self.m.splice(address..attr.len() as usize, tmp);
+        let m = self.cur.get_mut();
+        m.splice(address..attr.len() as usize, tmp);
         Ok(())
     }
 }
@@ -115,12 +124,17 @@ impl Memory for DefaultMemory {
  * returns an istance of DefaultMemory with the given size.
  */
 pub fn new_default(size: usize) -> Box<dyn Memory> {
-    // create memory and zero it
-    let mut v = Vec::with_capacity(size);
+    // create memory
+    let mut m = DefaultMemory {
+        size: size,
+        cur: Cursor::new(Vec::with_capacity(size)),
+    };
+
+    // and fill with zeroes
+    let v = m.cur.get_mut();
     for _ in 0..size {
         v.push(0)
     }
 
-    let m = DefaultMemory { size: size, m: v };
     Box::new(m)
 }
