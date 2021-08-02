@@ -4,6 +4,7 @@ use crate::memory::memory_error::MemoryError;
 use crate::memory::Memory;
 use crossbeam_channel::unbounded;
 use crossbeam_channel::{Receiver, Sender};
+use log::{debug, error, info, log_enabled, Level};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::{Display, Error, Formatter};
@@ -70,14 +71,22 @@ pub struct Cpu {
     /// the bus.
     pub bus: Box<dyn Bus>,
 
-    /// channels for communications TO the ui.
-    pub to_ui_channels: (Sender<UiContext>, Receiver<UiContext>),
-
-    /// channels for communications FROM the ui.
-    pub from_ui_channels: (Sender<UiContext>, Receiver<UiContext>),
+    /// channels for communications with the ui the ui.
+    pub s_r_chn: (Sender<UiContext>, Receiver<UiContext>),
 }
 
 impl Cpu {
+    /**
+     * activate logging on stdout trough env_logger (max level)
+     */
+    pub fn enable_logging(enable: bool) {
+        if enable == true {
+            let _ = env_logger::builder()
+                .filter_level(log::LevelFilter::max())
+                .try_init();
+        }
+    }
+
     /**
      * creates a new cpu instance, with the given Bus attached.
      */
@@ -86,8 +95,7 @@ impl Cpu {
             regs: Registers::new(),
             cycles: 0,
             bus: b,
-            to_ui_channels: unbounded::<UiContext>(),
-            from_ui_channels: unbounded::<UiContext>(),
+            s_r_chn: unbounded::<UiContext>(),
         };
         c
     }
@@ -119,7 +127,7 @@ impl Cpu {
                 .get_memory()
                 .read_word_le(Vectors::RESET as usize)?,
         };
-        println!("{}", self.regs);
+        info!("{}", self.regs);
         Ok(())
     }
 

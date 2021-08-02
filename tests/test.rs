@@ -1,3 +1,4 @@
+use log::{debug, error, info, log_enabled, Level};
 use rv6502emu::bus;
 use rv6502emu::cpu::Cpu;
 use rv6502emu::gui::DebuggerUi;
@@ -9,20 +10,20 @@ use std::sync::Arc;
 
 fn test_inner(mem: &mut Box<dyn Memory>) {
     let b = mem.read_byte(123).unwrap();
-    println!("b after write 2={:x}", b);
+    info!("b after write 2={:x}", b);
     assert_eq!(b, 0xfc);
 }
 
 fn test_read_writes(mem: &mut Box<dyn Memory>) {
     // some read and writes
     let mut bb = mem.read_byte(123).unwrap();
-    println!("b after read ={}", bb);
+    info!("b after read ={}", bb);
     assert_eq!(bb, 0xff);
     mem.write_byte(123, 0xaa);
 
     // read again
     bb = mem.read_byte(123).unwrap();
-    println!("b after write 1={:x}", bb);
+    info!("b after write 1={:x}", bb);
     assert_eq!(bb, 0xaa);
 
     // some read and writes in a function
@@ -38,6 +39,11 @@ fn test_read_writes(mem: &mut Box<dyn Memory>) {
  */
 #[test]
 fn test_cpu() {
+    // init logger
+    let _ = env_logger::builder()
+        .filter_level(log::LevelFilter::max())
+        .try_init();
+
     // create a cpu with default bus and 64k memory
     let mut c = rv6502emu::cpu::Cpu::new_default(0x10000);
     let mem = c.bus.get_memory();
@@ -52,22 +58,27 @@ fn test_cpu() {
 
     // resets the cpu and start execution
     c.reset();
-    println!("cpu thread handle={:?}", std::thread::current());
-    let mut dbg_ui = rv6502emu::gui::new(&c.to_ui_channels, &c.from_ui_channels);
-    let t_handle = dbg_ui.run();
-    println!("receiving.....");
+    info!("cpu thread handle={:?}", std::thread::current());
+    let mut dbg_ui = rv6502emu::gui::new();
+    dbg_ui.initialize();
+    info!("app run");
+    /*
+    //let mut dbg_ui = rv6502emu::gui::new(&c.to_ui_channels, &c.from_ui_channels);
+    //let t_handle = dbg_ui.run();
+    info!("receiving.....");
     c.from_ui_channels.1.recv();
-    println!("received!");
+    info!("received!");
     t_handle.join();
+    */
     /*
     // some read and writes
     let mut bb = mem.read_byte(123).unwrap();
-    println!("b after read ={}", bb);
+    info!("b after read ={}", bb);
     mem.write_byte(123, 0xaa);
 
     // read again
     bb = mem.read_byte(123).unwrap();
-    println!("b after write={:x}", bb);
+    info!("b after write={:x}", bb);
 
     // some read and writes in a function
     tt(mem);
