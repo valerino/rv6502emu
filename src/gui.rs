@@ -33,6 +33,7 @@ use crossbeam_channel::unbounded;
 use crossbeam_channel::{Receiver, Sender};
 use gtk::prelude::*;
 use gtk::Application;
+use log::*;
 use serde::{Deserialize, Serialize};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -50,7 +51,7 @@ pub struct UiContext {
  */
 pub struct DebuggerUi {
     hidden: bool,
-    r_s_chn: (Sender<UiContext>, Receiver<UiContext>),
+    pub r_s_chn: (Sender<UiContext>, Receiver<UiContext>),
     pub app: Application, //from_ui: &'a (Sender<UiContext>, Receiver<UiContext>),
 }
 
@@ -59,14 +60,24 @@ impl DebuggerUi {
         AppState.get_external_handle();
     }*/
 
-    pub fn run(&mut self) -> std::thread::JoinHandle<()> {
-        //let c_to_ui = self.to_ui.clone();
-        //let c_from_ui = self.from_ui.clone();
-        let h = std::thread::spawn(move || {});
-        h
+    pub fn start_comm_thread(&mut self) -> std::thread::JoinHandle<()> {
+        let comm_thread = std::thread::spawn(move || {
+            debug!("comm thread running");
+            loop {
+                let start = std::time::Instant::now();
+                let pause = std::time::Duration::from_millis(1000);
+                debug!("comm thread spinning");
+
+                while start.elapsed() < pause {
+                    std::thread::yield_now();
+                }
+            }
+            debug!("comm thread terminated");
+        });
+        comm_thread
     }
 
-    pub fn initialize(&mut self) {
+    pub fn run(&mut self) {
         println!("connect!");
         self.app.connect_activate(build_ui);
         println!("run!");

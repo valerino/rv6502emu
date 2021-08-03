@@ -1,4 +1,4 @@
-use log::{debug, error, info, log_enabled, Level};
+use log::*;
 use rv6502emu::bus;
 use rv6502emu::cpu::Cpu;
 use rv6502emu::gui::DebuggerUi;
@@ -44,6 +44,11 @@ fn test_cpu() {
         .filter_level(log::LevelFilter::max())
         .try_init();
 
+    // run the cpu thread
+    let mut dbg_ui = rv6502emu::gui::new();
+    dbg_ui.start_comm_thread();
+    info!("running gui");
+    dbg_ui.run();
     // create a cpu with default bus and 64k memory
     let mut c = rv6502emu::cpu::Cpu::new_default(0x10000);
     let mem = c.bus.get_memory();
@@ -60,8 +65,10 @@ fn test_cpu() {
     c.reset();
     info!("cpu thread handle={:?}", std::thread::current());
     let mut dbg_ui = rv6502emu::gui::new();
-    dbg_ui.initialize();
-    info!("app run");
+    dbg_ui.start_comm_thread();
+    info!("running gui");
+    dbg_ui.run();
+
     /*
     //let mut dbg_ui = rv6502emu::gui::new(&c.to_ui_channels, &c.from_ui_channels);
     //let t_handle = dbg_ui.run();
