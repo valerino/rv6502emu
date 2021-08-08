@@ -37,18 +37,11 @@ lazy_static! {
     /**
      * the 256 opcodes table, each one executes, updates the cpu state and return elapsed cycles
      */
-    pub static ref OPCODE_MATRIX: Vec<fn(c: &mut Cpu) -> usize> =
-        vec![adc::<AccumulatorAddressing>, adc::<AccumulatorAddressing>];
+    pub static ref OPCODE_MATRIX: Vec<(fn(c: &mut Cpu) -> usize, usize)> =
+        vec![(adc::<AccumulatorAddressing>, 1), (adc::<AccumulatorAddressing>, 3)];
 }
 
 fn adc<a: AddressingMode>(c: &mut Cpu) -> usize {
     a::operand(c);
-    0
-}
-
-/**
- * fetch opcode at PC
- */
-pub fn fetch(c: &Cpu) -> u8 {
     0
 }

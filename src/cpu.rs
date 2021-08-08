@@ -127,15 +127,22 @@ impl Cpu {
             pc: addr,
         };
         debug!("RESET\n--> {}", self.regs);
-        opcodes::OPCODE_MATRIX[1](self);
-        opcodes::OPCODE_MATRIX[0](self);
+        let (f, cycles) = opcodes::OPCODE_MATRIX[1];
+        f(self);
+    }
+
+    /**
+     * fetch opcode at PC
+     */
+    fn fetch(&self) -> u8 {
+        0
     }
 
     /**
      * step an instruction and return elapsed cycles
      */
     fn step(&mut self) -> usize {
-        let op = opcodes::fetch(&self);
+        let op = self.fetch();
         0
     }
 
