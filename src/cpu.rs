@@ -1,19 +1,14 @@
 use crate::bus::Bus;
-use crate::gui::{DebuggerUi, UiContext};
-use crate::memory::memory_error::MemoryError;
-use crate::memory::Memory;
-use crossbeam_channel::unbounded;
-use crossbeam_channel::{Receiver, Sender};
-use log::{debug, error, info, log_enabled, Level};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use log::*;
+mod opcodes;
+use opcodes::*;
 use std::fmt::{Display, Error, Formatter};
-use std::prelude::*;
+mod addressing_modes;
 
 /**
  * the cpu registers.
  */
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Registers {
     pub a: u8,
     pub x: u8,
@@ -68,11 +63,11 @@ pub struct Cpu {
     /// current cpu cycles.
     pub cycles: usize,
 
+    // debugger enabled/disabled
+    pub debug: bool,
+
     /// the bus.
     pub bus: Box<dyn Bus>,
-
-    /// channels for communications with the ui the ui.
-    pub s_r_chn: (Sender<UiContext>, Receiver<UiContext>),
 }
 
 impl Cpu {
@@ -90,12 +85,12 @@ impl Cpu {
     /**
      * creates a new cpu instance, with the given Bus attached.
      */
-    pub fn new(b: Box<dyn Bus>) -> Cpu {
+    pub fn new(b: Box<dyn Bus>, debug: bool) -> Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
             bus: b,
-            s_r_chn: unbounded::<UiContext>(),
+            debug: debug,
         };
         c
     }
@@ -103,17 +98,24 @@ impl Cpu {
     /**
      * creates a new cpu instance, with the given Bus attached, exposing a Memory of the given size.
      */
-    pub fn new_default(mem_size: usize) -> Cpu {
+    pub fn new_default(mem_size: usize, debug: bool) -> Cpu {
         let m = super::memory::new_default(mem_size);
         let b = super::bus::new_default(m);
-        Cpu::new(b)
+        Cpu::new(b, debug)
     }
 
     /**
      * resets the cpu setting all registers to the initial values.
      */
-    pub fn reset(&mut self) -> Result<(), MemoryError> {
+    pub fn reset(&mut self) {
+        // get the start address from reset vector
         // from https://www.pagetable.com/?p=410
+        let addr = self
+            .bus
+            .get_memory()
+            .read_word_le(Vectors::RESET as usize)
+            .unwrap();
+
         self.regs = Registers {
             a: 0xaa,
             x: 0,
@@ -122,19 +124,27 @@ impl Cpu {
             s: 0xfd,
 
             // at reset, we read PC from RESET vector
-            pc: self
-                .bus
-                .get_memory()
-                .read_word_le(Vectors::RESET as usize)?,
+            pc: addr,
         };
-        info!("{}", self.regs);
-        Ok(())
+        debug!("RESET\n--> {}", self.regs);
+        opcodes::OPCODE_MATRIX[1](self);
+        opcodes::OPCODE_MATRIX[0](self);
     }
 
     /**
-     * run the cpu for the given cycles
+     * step an instruction and return elapsed cycles
      */
-    pub fn step(&mut self, cycles: usize) {}
+    fn step(&mut self) -> usize {
+        let op = opcodes::fetch(&self);
+        0
+    }
+
+    /**
+     * run the cpu for the given cycles, pass 0 to run indefinitely
+     */
+    pub fn run(&mut self, cycles: usize) {
+        loop {}
+    }
 
     /**
      * triggers an irq.

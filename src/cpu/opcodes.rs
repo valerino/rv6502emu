@@ -1,7 +1,7 @@
 /*
- * Filename: /src/lib.rs
+ * Filename: /src/cpu/opcodes.rs
  * Project: rv6502emu
- * Created Date: Saturday, July 3rd 2021, 10:44:18 am
+ * Created Date: Thursday, January 1st 1970, 1:00:00 am
  * Author: valerino <xoanino@gmail.com>
  * Copyright (c) 2021 valerino
  *
@@ -28,13 +28,27 @@
  * SOFTWARE.
  */
 
-//! implements a MOS6502 CPU emulator.
+use crate::cpu::addressing_modes::*;
+use crate::cpu::Cpu;
+use lazy_static::*;
+use log::*;
 
-/// implements the cpu.
-pub mod cpu;
+lazy_static! {
+    /**
+     * the 256 opcodes table, each one executes, updates the cpu state and return elapsed cycles
+     */
+    pub static ref OPCODE_MATRIX: Vec<fn(c: &mut Cpu) -> usize> =
+        vec![adc::<AccumulatorAddressing>, adc::<AccumulatorAddressing>];
+}
 
-/// implements the emulated memory.
-pub mod memory;
+fn adc<a: AddressingMode>(c: &mut Cpu) -> usize {
+    a::operand(c);
+    0
+}
 
-/// implements the emulated bus.
-pub mod bus;
+/**
+ * fetch opcode at PC
+ */
+pub fn fetch(c: &Cpu) -> u8 {
+    0
+}

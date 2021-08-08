@@ -47,6 +47,8 @@ struct DefaultBus {
     m: Box<dyn Memory>,
 }
 
+unsafe impl Send for DefaultBus {}
+
 impl Bus for DefaultBus {
     fn get_memory(&mut self) -> &mut Box<dyn Memory> {
         let mm = &mut self.m;
