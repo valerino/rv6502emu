@@ -1,7 +1,7 @@
 /*
  * Filename: /src/cpu/addressing_modes.rs
  * Project: rv6502emu
- * Created Date: Thursday, January 1st 1970, 1:00:00 am
+ * Created Date: 2021-08-09, 12:52:06
  * Author: valerino <xoanino@gmail.com>
  * Copyright (c) 2021 valerino
  *
@@ -41,43 +41,56 @@ pub trait AddressingMode {
     /**
      * fetch the operand (the target address)
      */
-    fn operand(c: &Cpu) -> Result<u16, MemoryError> {
-        info!("called operand");
-        let f = c.cb;
-        f(CpuCallbackContext {
-            address: 1234,
-            value: 11,
-            operation: CpuOperation::Write,
-        });
+    fn operand(_c: &Cpu) -> Result<u16, MemoryError> {
         Ok(0)
     }
 
     /**
      * load byte from address
      */
-    fn load(c: &Cpu, address: u16) -> Result<u8, MemoryError> {
-        Ok(0)
+    fn load(c: &mut Cpu, address: u16) -> Result<u8, MemoryError> {
+        let m = c.bus.get_memory();
+        let b = m.read_byte(address as usize)?;
+
+        // call callback
+        Ok(b)
     }
 
     /**
      * store byte to address
      */
     fn store(c: &mut Cpu, address: u16, b: u8) -> Result<(), MemoryError> {
-        Ok(())
+        let m = c.bus.get_memory();
+        let res = m.write_byte(address as usize, b);
+        res
     }
 }
 
 pub struct AccumulatorAddressing;
-impl AddressingMode for AccumulatorAddressing {}
+
+impl AddressingMode for AccumulatorAddressing {
+    fn operand(_c: &Cpu) -> Result<u16, MemoryError> {
+        // implied A
+        Ok(0)
+    }
+
+    fn load(c: &mut Cpu, _: u16) -> Result<u8, MemoryError> {
+        Ok(c.regs.a)
+    }
+    fn store(c: &mut Cpu, _: u16, b: u8) -> Result<(), MemoryError> {
+        c.regs.a = b;
+        Ok(())
+    }
+}
 
 pub struct AbsoluteAddressing;
 impl AddressingMode for AbsoluteAddressing {}
 
-pub struct AbsoluteAddressingX;
-impl AddressingMode for AbsoluteAddressingX {}
+pub struct AbsoluteXAddressing;
+impl AddressingMode for AbsoluteXAddressing {}
 
-pub struct AbsoluteAddressingY;
-impl AddressingMode for AbsoluteAddressingY {}
+pub struct AbsoluteYAddressing;
+impl AddressingMode for AbsoluteYAddressing {}
 
 pub struct ImmediateAddressing;
 impl AddressingMode for ImmediateAddressing {}
