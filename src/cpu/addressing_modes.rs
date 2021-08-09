@@ -47,6 +47,13 @@ pub trait AddressingMode {
     }
 
     /**
+     * string representation
+     */
+    fn repr(opcode_name: &str) -> String {
+        String::from(opcode_name)
+    }
+
+    /**
      * fetch the operand (the target address)
      */
     fn operand(_c: &Cpu) -> Result<u16, MemoryError> {
@@ -93,6 +100,10 @@ impl AddressingMode for AccumulatorAddressing {
 
 pub struct AbsoluteAddressing;
 impl AddressingMode for AbsoluteAddressing {
+    fn len() -> u16 {
+        3
+    }
+
     fn operand(_c: &Cpu) -> Result<u16, MemoryError> {
         // implied A
         Ok(0)
@@ -108,34 +119,74 @@ impl AddressingMode for AbsoluteAddressing {
 }
 
 pub struct AbsoluteXAddressing;
-impl AddressingMode for AbsoluteXAddressing {}
+impl AddressingMode for AbsoluteXAddressing {
+    fn len() -> u16 {
+        3
+    }
+}
 
 pub struct AbsoluteYAddressing;
-impl AddressingMode for AbsoluteYAddressing {}
+impl AddressingMode for AbsoluteYAddressing {
+    fn len() -> u16 {
+        3
+    }
+}
 
 pub struct ImmediateAddressing;
-impl AddressingMode for ImmediateAddressing {}
+impl AddressingMode for ImmediateAddressing {
+    fn len() -> u16 {
+        2
+    }
+}
 
 pub struct ImpliedAddressing;
 impl AddressingMode for ImpliedAddressing {}
 
 pub struct IndirectAddressing;
-impl AddressingMode for IndirectAddressing {}
+impl AddressingMode for IndirectAddressing {
+    fn len() -> u16 {
+        3
+    }
+}
 
 pub struct XIndirectAddressing;
-impl AddressingMode for XIndirectAddressing {}
+impl AddressingMode for XIndirectAddressing {
+    fn len() -> u16 {
+        2
+    }
+}
 
 pub struct IndirectYAddressing;
-impl AddressingMode for IndirectYAddressing {}
+impl AddressingMode for IndirectYAddressing {
+    fn len() -> u16 {
+        2
+    }
+}
 
 pub struct RelativeAddressing;
-impl AddressingMode for RelativeAddressing {}
+impl AddressingMode for RelativeAddressing {
+    fn len() -> u16 {
+        2
+    }
+}
 
 pub struct ZeroPageAddressing;
-impl AddressingMode for ZeroPageAddressing {}
+impl AddressingMode for ZeroPageAddressing {
+    fn len() -> u16 {
+        2
+    }
+}
 
 pub struct ZeroPageXAddressing;
-impl AddressingMode for ZeroPageXAddressing {}
+impl AddressingMode for ZeroPageXAddressing {
+    fn len() -> u16 {
+        2
+    }
+}
 
 pub struct ZeroPageYAddressing;
-impl AddressingMode for ZeroPageYAddressing {}
+impl AddressingMode for ZeroPageYAddressing {
+    fn len() -> u16 {
+        2
+    }
+}
