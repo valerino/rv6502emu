@@ -50,7 +50,7 @@ pub trait AddressingMode {
      * string representation
      */
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        String::from(opcode_name)
+        String::from(opcode_name.to_uppercase())
     }
 
     /**
@@ -94,7 +94,7 @@ fn is_page_cross(src_addr: u16, dst_addr: u16) -> bool {
 pub struct AccumulatorAddressing;
 impl AddressingMode for AccumulatorAddressing {
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} A", opcode_name)
+        format!("{} A", opcode_name.to_uppercase())
     }
 
     fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
@@ -118,7 +118,7 @@ impl AddressingMode for AbsoluteAddressing {
     }
 
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} ${:02x}", opcode_name, _operand)
+        format!("{} ${:02x}", opcode_name.to_uppercase(), _operand)
     }
 
     fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
@@ -134,7 +134,7 @@ impl AddressingMode for AbsoluteAddressing {
 pub struct AbsoluteXAddressing;
 impl AddressingMode for AbsoluteXAddressing {
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} ${:02x}, X", opcode_name, _operand)
+        format!("{} ${:02x}, X", opcode_name.to_uppercase(), _operand)
     }
 
     fn len() -> u16 {
@@ -159,7 +159,7 @@ impl AddressingMode for AbsoluteXAddressing {
 pub struct AbsoluteYAddressing;
 impl AddressingMode for AbsoluteYAddressing {
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} ${:02x}, Y", opcode_name, _operand)
+        format!("{} ${:02x}, Y", opcode_name.to_uppercase(), _operand)
     }
 
     fn len() -> u16 {
@@ -184,7 +184,7 @@ impl AddressingMode for AbsoluteYAddressing {
 pub struct ImmediateAddressing;
 impl AddressingMode for ImmediateAddressing {
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} #${:x}", opcode_name, _operand as u8)
+        format!("{} #${:x}", opcode_name.to_uppercase(), _operand as u8)
     }
 
     fn len() -> u16 {
@@ -199,14 +199,14 @@ impl AddressingMode for ImmediateAddressing {
 pub struct ImpliedAddressing;
 impl AddressingMode for ImpliedAddressing {
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{}", opcode_name)
+        format!("{}", opcode_name.to_uppercase())
     }
 }
 
 pub struct IndirectAddressing;
 impl AddressingMode for IndirectAddressing {
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} (${:02x})", opcode_name, _operand)
+        format!("{} (${:02x})", opcode_name.to_uppercase(), _operand)
     }
 
     fn len() -> u16 {
@@ -233,7 +233,7 @@ impl AddressingMode for XIndirectAddressing {
         2
     }
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} (${:x}, X)", opcode_name, _operand as u8)
+        format!("{} (${:x}, X)", opcode_name.to_uppercase(), _operand as u8)
     }
 
     fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
@@ -254,7 +254,7 @@ impl AddressingMode for IndirectYAddressing {
         2
     }
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} (${:x}), Y", opcode_name, _operand as u8)
+        format!("{} (${:x}), Y", opcode_name.to_uppercase(), _operand as u8)
     }
 
     fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
@@ -278,7 +278,7 @@ impl AddressingMode for RelativeAddressing {
         2
     }
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} ${:x}", opcode_name, _operand as u8)
+        format!("{} ${:x}", opcode_name.to_uppercase(), _operand as u8)
     }
     fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
         // this is the offset to be added (signed) to PC
@@ -293,7 +293,7 @@ impl AddressingMode for ZeroPageAddressing {
         2
     }
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} ${:x}", opcode_name, _operand as u8)
+        format!("{} ${:x}", opcode_name.to_uppercase(), _operand as u8)
     }
     fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
@@ -307,7 +307,7 @@ impl AddressingMode for ZeroPageXAddressing {
         2
     }
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} ${:x}, X", opcode_name, _operand as u8)
+        format!("{} ${:x}, X", opcode_name.to_uppercase(), _operand as u8)
     }
     fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
@@ -324,7 +324,7 @@ impl AddressingMode for ZeroPageYAddressing {
         2
     }
     fn repr(opcode_name: &str, _operand: u16) -> String {
-        format!("{} ${:x}, Y", opcode_name, _operand as u8)
+        format!("{} ${:x}, Y", opcode_name.to_uppercase(), _operand as u8)
     }
     fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
