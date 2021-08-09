@@ -30,6 +30,8 @@
 
 use crate::cpu::addressing_modes::*;
 use crate::cpu::Cpu;
+use crate::memory::memory_error::MemoryError;
+use crate::memory::Memory;
 use lazy_static::*;
 use log::*;
 

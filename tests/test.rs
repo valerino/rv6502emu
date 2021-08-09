@@ -1,5 +1,6 @@
 use log::*;
 use rv6502emu::cpu::Cpu;
+use rv6502emu::cpu::CpuCallbackContext;
 use rv6502emu::memory::Memory;
 fn test_inner(mem: &mut Box<dyn Memory>) {
     let b = mem.read_byte(123).unwrap();
@@ -27,6 +28,10 @@ fn test_read_writes(mem: &mut Box<dyn Memory>) {
     assert_eq!(b, 0xfc)
 }
 
+fn test_callback(cb: CpuCallbackContext) {
+    info!("hello from callback {:?}", cb);
+}
+
 /**
  * tests the cpu using klaus test (https://github.com/Klaus2m5/6502_65C02_functional_tests)
  */
@@ -38,7 +43,7 @@ fn test_cpu() {
         .try_init();
 
     // create a cpu with default bus and 64k memory
-    let mut c = Cpu::new_default(0x10000, true);
+    let mut c = Cpu::new_default(0x10000, test_callback, true);
     let mem = c.bus.get_memory();
 
     // load test file

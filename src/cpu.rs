@@ -1,4 +1,6 @@
 use crate::bus::Bus;
+use crate::memory::memory_error::MemoryError;
+use crate::memory::Memory;
 use log::*;
 mod opcodes;
 use opcodes::*;
@@ -16,6 +18,27 @@ pub struct Registers {
     pub p: u8,
     pub s: u8,
     pub pc: u16,
+}
+
+/**
+ * indicates the operation CpuCallbackContext refers to.
+ */
+#[derive(Debug, PartialEq)]
+pub enum CpuOperation {
+    Read,
+    Write,
+    Irq,
+    Nmi,
+}
+
+/**
+ * this is passed by the cpu to the caller when reads/writes/irq/nmi occurs.
+ */
+#[derive(Debug)]
+pub struct CpuCallbackContext {
+    pub address: usize,
+    pub value: u8,
+    pub operation: CpuOperation,
 }
 
 impl Display for Registers {
@@ -68,6 +91,9 @@ pub struct Cpu {
 
     /// the bus.
     pub bus: Box<dyn Bus>,
+
+    // callback for the caller
+    pub cb: fn(cb: CpuCallbackContext),
 }
 
 impl Cpu {
@@ -85,12 +111,13 @@ impl Cpu {
     /**
      * creates a new cpu instance, with the given Bus attached.
      */
-    pub fn new(b: Box<dyn Bus>, debug: bool) -> Cpu {
+    pub fn new(b: Box<dyn Bus>, cb: fn(cb: CpuCallbackContext), debug: bool) -> Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
             bus: b,
             debug: debug,
+            cb: cb,
         };
         c
     }
@@ -98,10 +125,10 @@ impl Cpu {
     /**
      * creates a new cpu instance, with the given Bus attached, exposing a Memory of the given size.
      */
-    pub fn new_default(mem_size: usize, debug: bool) -> Cpu {
+    pub fn new_default(mem_size: usize, cb: fn(cb: CpuCallbackContext), debug: bool) -> Cpu {
         let m = super::memory::new_default(mem_size);
         let b = super::bus::new_default(m);
-        Cpu::new(b, debug)
+        Cpu::new(b, cb, debug)
     }
 
     /**
@@ -134,23 +161,30 @@ impl Cpu {
     /**
      * fetch opcode at PC
      */
-    fn fetch(&self) -> u8 {
-        0
+    fn fetch(&mut self) -> Result<u8, MemoryError> {
+        let mem = self.bus.get_memory();
+        let b = mem.read_byte(self.regs.pc as usize)?;
+        Ok(b)
     }
 
     /**
      * step an instruction and return elapsed cycles
      */
     fn step(&mut self) -> usize {
-        let op = self.fetch();
+        let b = self.fetch();
+        let (f, cycles) = opcodes::OPCODE_MATRIX[1];
+        f(self);
         0
     }
 
     /**
      * run the cpu for the given cycles, pass 0 to run indefinitely
      */
-    pub fn run(&mut self, cycles: usize) {
-        loop {}
+    pub fn run(&mut self, cycles: usize) -> Result<(), MemoryError> {
+        loop {
+            let b = self.fetch();
+        }
+        Ok(())
     }
 
     /**

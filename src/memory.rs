@@ -77,7 +77,6 @@ struct DefaultMemory {
 impl Memory for DefaultMemory {
     fn read_byte(&mut self, address: usize) -> Result<u8, MemoryError> {
         memory_error::check_address(self, address, 1, MemoryOperation::Read)?;
-
         self.cur.set_position(address as u64);
         let res = self.cur.read_u8()?;
         Ok(res)

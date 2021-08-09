@@ -29,6 +29,9 @@
  */
 
 use crate::cpu::Cpu;
+use crate::cpu::CpuCallbackContext;
+use crate::cpu::CpuOperation;
+use crate::memory::memory_error::MemoryError;
 use log::*;
 
 /**
@@ -38,22 +41,30 @@ pub trait AddressingMode {
     /**
      * fetch the operand (the target address)
      */
-    fn operand(c: &Cpu) -> u16 {
+    fn operand(c: &Cpu) -> Result<u16, MemoryError> {
         info!("called operand");
-        0
+        let f = c.cb;
+        f(CpuCallbackContext {
+            address: 1234,
+            value: 11,
+            operation: CpuOperation::Write,
+        });
+        Ok(0)
     }
 
     /**
      * load byte from address
      */
-    fn load(c: &Cpu, address: u16) -> u8 {
-        0
+    fn load(c: &Cpu, address: u16) -> Result<u8, MemoryError> {
+        Ok(0)
     }
 
     /**
      * store byte to address
      */
-    fn store(c: &mut Cpu, address: u16, b: u8) {}
+    fn store(c: &mut Cpu, address: u16, b: u8) -> Result<(), MemoryError> {
+        Ok(())
+    }
 }
 
 pub struct AccumulatorAddressing;
