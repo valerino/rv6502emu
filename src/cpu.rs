@@ -277,14 +277,15 @@ impl Cpu {
             // decode and run
             let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing) =
                 opcodes::OPCODE_MATRIX[b as usize];
-            let elapsed = match opcode_f(self, opcode_cycles, add_extra_cycle_on_page_crossing) {
-                // panic here ...
-                // TODO: break on debug
-                Err(e) => return Err(e),
-                Ok(ok) => ok,
-            };
+            let (instr_size, elapsed) =
+                match opcode_f(self, opcode_cycles, add_extra_cycle_on_page_crossing) {
+                    // panic here ...
+                    // TODO: break on debug
+                    Err(e) => return Err(e),
+                    Ok(ok) => ok,
+                };
             // advance pc and increment the elapsed cycles
-            self.regs.pc += 1;
+            self.regs.pc += instr_size;
             self.cycles += elapsed;
             if cycles != 0 && elapsed >= cycles {
                 break;

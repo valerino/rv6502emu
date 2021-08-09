@@ -36,8 +36,16 @@ use log::*;
 
 /**
  * http://www.emulator101.com/6502-addressing-modes.html
+ * https://www.masswerk.at/6502/6502_instruction_set.html
  */
 pub trait AddressingMode {
+    /**
+     * the instruction size
+     */
+    fn len() -> u16 {
+        1
+    }
+
     /**
      * fetch the operand (the target address)
      */
@@ -84,7 +92,20 @@ impl AddressingMode for AccumulatorAddressing {
 }
 
 pub struct AbsoluteAddressing;
-impl AddressingMode for AbsoluteAddressing {}
+impl AddressingMode for AbsoluteAddressing {
+    fn operand(_c: &Cpu) -> Result<u16, MemoryError> {
+        // implied A
+        Ok(0)
+    }
+
+    fn load(c: &mut Cpu, address: u16) -> Result<u8, MemoryError> {
+        Ok(c.regs.a)
+    }
+    fn store(c: &mut Cpu, _: u16, b: u8) -> Result<(), MemoryError> {
+        c.regs.a = b;
+        Ok(())
+    }
+}
 
 pub struct AbsoluteXAddressing;
 impl AddressingMode for AbsoluteXAddressing {}
