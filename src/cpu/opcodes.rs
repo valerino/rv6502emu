@@ -32,6 +32,7 @@ use crate::cpu::addressing_modes::*;
 use crate::cpu::Cpu;
 use crate::memory::memory_error::MemoryError;
 use crate::memory::Memory;
+use ::function_name::named;
 use lazy_static::*;
 use log::*;
 
@@ -142,332 +143,511 @@ lazy_static! {
             ];
 }
 
+#[named]
 fn adc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    let l = A::len();
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn ahx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    let l = A::len();
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn alr<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn anc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn and<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn arr<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn asl<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn axs<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn bcc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn bcs<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn beq<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn bit<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn bmi<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn bne<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn bpl<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn brk<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn bvc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn bvs<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn clc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn cld<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn cli<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn clv<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn cmp<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn cpx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn cpy<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn dcp<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn dec<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn dex<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn dey<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn eor<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn inc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn isc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn inx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn iny<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn jmp<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn jsr<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn kil<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
@@ -478,349 +658,534 @@ fn kil<A: AddressingMode>(
     panic!("KIL\n--> {}", c.regs);
 }
 
+#[named]
 fn las<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    let l = A::len();
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn lax<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    let l = A::len();
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn lda<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn ldx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn ldy<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn lsr<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn nop<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn ora<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn pha<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn php<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn pla<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn plp<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn rla<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn rol<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn ror<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn rra<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn rti<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn rts<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn sax<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn sbc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn sec<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn sed<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn sei<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn shx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    let l = A::len();
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn shy<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    let l = A::len();
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn slo<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn sre<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn sta<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn stx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn sty<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn tas<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn tax<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    let l = A::len();
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn tay<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn tsx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn txa<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn txs<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn tya<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+#[named]
 fn xaa<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
-    A::operand(c);
-    Ok((1, in_cycles))
+    let (oprnd, extra_cycle) = A::operand(c)?;
+    let opc_string = A::repr(function_name!(), oprnd);
+    debug!("{}", opc_string);
+    let instr_len = A::len();
+
+    Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
