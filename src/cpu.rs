@@ -86,13 +86,13 @@ pub struct Cpu {
     /// current cpu cycles.
     pub cycles: usize,
 
-    // debugger enabled/disabled
+    // debugger enabled/disabled.
     pub debug: bool,
 
     /// the bus.
     pub bus: Box<dyn Bus>,
 
-    // callback for the caller
+    // callback for the caller.
     pub cb: fn(cb: CpuCallbackContext),
 }
 
@@ -134,15 +134,19 @@ impl Cpu {
     /**
      * resets the cpu setting all registers to the initial values.
      */
-    pub fn reset(&mut self) {
-        // get the start address from reset vector
-        // from https://www.pagetable.com/?p=410
-        let addr = self
-            .bus
-            .get_memory()
-            .read_word_le(Vectors::RESET as usize)
-            .unwrap();
-
+    pub fn reset(&mut self, start_address: Option<u16>) -> Result<(), MemoryError> {
+        let mut addr: u16 = 0;
+        if let Some(a) = start_address {
+            // use provided address
+            addr = a;
+        } else {
+            // get the start address from reset vector
+            // from https://www.pagetable.com/?p=410
+            addr = self
+                .bus
+                .get_memory()
+                .read_word_le(Vectors::RESET as usize)?;
+        }
         self.regs = Registers {
             a: 0xaa,
             x: 0,
@@ -154,8 +158,7 @@ impl Cpu {
             pc: addr,
         };
         debug!("RESET\n--> {}", self.regs);
-        let (f, cycles) = opcodes::OPCODE_MATRIX[1];
-        f(self);
+        Ok(())
     }
 
     /**
@@ -168,21 +171,30 @@ impl Cpu {
     }
 
     /**
-     * step an instruction and return elapsed cycles
-     */
-    fn step(&mut self) -> usize {
-        let b = self.fetch();
-        let (f, cycles) = opcodes::OPCODE_MATRIX[1];
-        f(self);
-        0
-    }
-
-    /**
-     * run the cpu for the given cycles, pass 0 to run indefinitely
+     * run the cpu for the given cycles, pass 0 to run indefinitely.
+     *
+     * > note that reset() must be called first to set the start address !
      */
     pub fn run(&mut self, cycles: usize) -> Result<(), MemoryError> {
         loop {
-            let b = self.fetch();
+            // fetch an instruction
+            let b = self.fetch()?;
+
+            // decode and run
+            let (opcode_f, opcode_cycles) = opcodes::OPCODE_MATRIX[b as usize];
+            let _ = match opcode_f(self, opcode_cycles) {
+                Ok(elapsed) => {
+                    // advance pc and increment the elapsed cycles
+                    self.regs.pc += 1;
+                    self.cycles += elapsed;
+                    if cycles != 0 && elapsed >= cycles {
+                        break;
+                    }
+                }
+                // panic here ...
+                // TODO: break on debug
+                Err(e) => return Err(e),
+            };
         }
         Ok(())
     }

@@ -53,8 +53,9 @@ fn test_cpu() {
     )
     .unwrap();
 
-    // resets the cpu and start execution
-    c.reset();
+    // resets the cpu (use 0x400 as custom address for the Klaus test) and start execution
+    c.reset(Some(0x400));
+    c.run(0);
 
     /*
     // create a cpu with default bus and 64k memory

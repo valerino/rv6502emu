@@ -37,13 +37,297 @@ use log::*;
 
 lazy_static! {
     /**
-     * the 256 opcodes table, each one executes, updates the cpu state and return elapsed cycles
+     * the 256 opcodes table
+     *
+     * each opcode gets in input a reference to the Cpu and the cycles needed to execute the opcode, then returns the effective elapsed cycles (may include an
+     * additional cycle due to page boundaries crossing).
      */
-    pub static ref OPCODE_MATRIX: Vec<(fn(c: &mut Cpu) -> usize, usize)> =
+    pub static ref OPCODE_MATRIX: Vec<(fn(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError>, usize)> =
         vec![(adc::<AccumulatorAddressing>, 1), (adc::<AccumulatorAddressing>, 3)];
 }
 
-fn adc<a: AddressingMode>(c: &mut Cpu) -> usize {
+fn adc<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
     a::operand(c);
-    0
+    Ok((in_cycles))
+}
+
+fn and<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn asl<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn bcc<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn bcs<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn beq<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn bit<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn bmi<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn bne<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn bpl<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn brk<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn bvc<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn bvs<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn clc<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn cld<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn cli<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn clv<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn cmp<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn cpx<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn cpy<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn dec<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn dex<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn dey<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn eor<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn inc<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn inx<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn iny<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn jmp<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn jsr<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn kil<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    // panic!
+    // TODO: handle debug
+    panic!("KIL\n--> {}", c.regs);
+}
+
+fn lda<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn ldx<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn ldy<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn lsr<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn nop<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn ora<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn pha<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn php<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn pla<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn plp<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn rol<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn ror<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn rti<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn rts<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn sbc<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn sec<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn sed<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn sei<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn sta<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn stx<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn sty<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn tax<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn tay<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn tsx<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn txa<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn txs<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
+}
+
+fn tya<a: AddressingMode>(c: &mut Cpu, in_cycles: usize) -> Result<usize, MemoryError> {
+    a::operand(c);
+    Ok((in_cycles))
 }
