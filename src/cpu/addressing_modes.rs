@@ -49,15 +49,15 @@ pub trait AddressingMode {
     /**
      * string representation
      */
-    fn repr(opcode_name: &str) -> String {
+    fn repr(opcode_name: &str, _operand: u16) -> String {
         String::from(opcode_name)
     }
 
     /**
-     * fetch the operand (the target address)
+     * fetch the operand (the target address), returns a tuple with (address, extra_cycle_if_page_crossed))
      */
-    fn operand(_c: &Cpu) -> Result<u16, MemoryError> {
-        Ok(0)
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        Ok((0, false))
     }
 
     /**
@@ -81,12 +81,25 @@ pub trait AddressingMode {
     }
 }
 
-pub struct AccumulatorAddressing;
+/**
+ * check hi-byte of source and destination addresses, to determine if there's a page cross.
+ */
+fn is_page_cross(src_addr: u16, dst_addr: u16) -> bool {
+    if src_addr & 0xff00 == dst_addr & 0xff00 {
+        return true;
+    }
+    false
+}
 
+pub struct AccumulatorAddressing;
 impl AddressingMode for AccumulatorAddressing {
-    fn operand(_c: &Cpu) -> Result<u16, MemoryError> {
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} A", opcode_name)
+    }
+
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
         // implied A
-        Ok(0)
+        Ok((0, false))
     }
 
     fn load(c: &mut Cpu, _: u16) -> Result<u8, MemoryError> {
@@ -104,48 +117,113 @@ impl AddressingMode for AbsoluteAddressing {
         3
     }
 
-    fn operand(_c: &Cpu) -> Result<u16, MemoryError> {
-        // implied A
-        Ok(0)
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} ${:02x}", opcode_name, _operand)
     }
 
-    fn load(c: &mut Cpu, address: u16) -> Result<u8, MemoryError> {
-        Ok(c.regs.a)
-    }
-    fn store(c: &mut Cpu, _: u16, b: u8) -> Result<(), MemoryError> {
-        c.regs.a = b;
-        Ok(())
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        let w = _c
+            .bus
+            .get_memory()
+            .read_word_le((_c.regs.pc + 1) as usize)?;
+
+        Ok((w, false))
     }
 }
 
 pub struct AbsoluteXAddressing;
 impl AddressingMode for AbsoluteXAddressing {
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} ${:02x}, X", opcode_name, _operand)
+    }
+
     fn len() -> u16 {
         3
+    }
+
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        let w = _c
+            .bus
+            .get_memory()
+            .read_word_le((_c.regs.pc + 1) as usize)?;
+        let ww = w.wrapping_add(_c.regs.x as u16);
+
+        if is_page_cross(w, ww) {
+            return Ok((ww, true));
+        }
+
+        Ok((ww, false))
     }
 }
 
 pub struct AbsoluteYAddressing;
 impl AddressingMode for AbsoluteYAddressing {
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} ${:02x}, Y", opcode_name, _operand)
+    }
+
     fn len() -> u16 {
         3
+    }
+
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        let w = _c
+            .bus
+            .get_memory()
+            .read_word_le((_c.regs.pc + 1) as usize)?;
+        let ww = w.wrapping_add(_c.regs.y as u16);
+
+        if is_page_cross(w, ww) {
+            return Ok((ww, true));
+        }
+
+        Ok((ww, false))
     }
 }
 
 pub struct ImmediateAddressing;
 impl AddressingMode for ImmediateAddressing {
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} #${:x}", opcode_name, _operand as u8)
+    }
+
     fn len() -> u16 {
         2
+    }
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        Ok((w as u16, false))
     }
 }
 
 pub struct ImpliedAddressing;
-impl AddressingMode for ImpliedAddressing {}
+impl AddressingMode for ImpliedAddressing {
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{}", opcode_name)
+    }
+}
 
 pub struct IndirectAddressing;
 impl AddressingMode for IndirectAddressing {
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} (${:02x})", opcode_name, _operand)
+    }
+
     fn len() -> u16 {
         3
+    }
+
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        // read address
+        let w = _c
+            .bus
+            .get_memory()
+            .read_word_le((_c.regs.pc + 1) as usize)?;
+
+        // read word at address
+        let ww = _c.bus.get_memory().read_word_le(w as usize)?;
+
+        Ok((ww, false))
     }
 }
 
@@ -154,12 +232,43 @@ impl AddressingMode for XIndirectAddressing {
     fn len() -> u16 {
         2
     }
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} (${:x}, X)", opcode_name, _operand as u8)
+    }
+
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        // read address in zeropage
+        let mut w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+
+        // add x, and read word
+        w = w.wrapping_add(_c.regs.x);
+        let ww = _c.bus.get_memory().read_word_le(w as usize)?;
+
+        Ok((ww, false))
+    }
 }
 
 pub struct IndirectYAddressing;
 impl AddressingMode for IndirectYAddressing {
     fn len() -> u16 {
         2
+    }
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} (${:x}), Y", opcode_name, _operand as u8)
+    }
+
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        // read address in zeropage
+        let mut w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+
+        // read word at address
+        let mut ww = _c.bus.get_memory().read_word_le(w as usize)?;
+
+        // read word at [address + y]
+        ww = ww.wrapping_add(_c.regs.y as u16);
+        let www = _c.bus.get_memory().read_word_le(ww as usize)?;
+
+        Ok((www, false))
     }
 }
 
@@ -168,12 +277,27 @@ impl AddressingMode for RelativeAddressing {
     fn len() -> u16 {
         2
     }
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} ${:x}", opcode_name, _operand as u8)
+    }
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        // this is the offset to be added (signed) to PC
+        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        Ok((w as u16, false))
+    }
 }
 
 pub struct ZeroPageAddressing;
 impl AddressingMode for ZeroPageAddressing {
     fn len() -> u16 {
         2
+    }
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} ${:x}", opcode_name, _operand as u8)
+    }
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        Ok((w as u16, false))
     }
 }
 
@@ -182,11 +306,31 @@ impl AddressingMode for ZeroPageXAddressing {
     fn len() -> u16 {
         2
     }
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} ${:x}, X", opcode_name, _operand as u8)
+    }
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let ww = w.wrapping_add(_c.regs.x as u8);
+
+        let www = _c.bus.get_memory().read_word_le(ww as usize)?;
+        Ok((www as u16, false))
+    }
 }
 
 pub struct ZeroPageYAddressing;
 impl AddressingMode for ZeroPageYAddressing {
     fn len() -> u16 {
         2
+    }
+    fn repr(opcode_name: &str, _operand: u16) -> String {
+        format!("{} ${:x}, Y", opcode_name, _operand as u8)
+    }
+    fn operand(_c: &mut Cpu) -> Result<(u16, bool), MemoryError> {
+        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let mut ww = _c.bus.get_memory().read_word_le(w as usize)?;
+        ww = ww.wrapping_add(_c.regs.y as u16);
+        let www = _c.bus.get_memory().read_word_le(ww as usize)?;
+        Ok((www as u16, false))
     }
 }
