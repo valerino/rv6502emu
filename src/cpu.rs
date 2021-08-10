@@ -227,6 +227,61 @@ impl Cpu {
     }
 
     /**
+     * set/unset the carry flag
+     */
+    pub(crate) fn set_carry(&mut self, set: bool) {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.set(CpuFlags::C, set);
+        self.regs.p = p.bits();
+    }
+
+    /**
+     * set/unset the negative flag
+     */
+    pub(crate) fn set_negative(&mut self, set: bool) {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.set(CpuFlags::N, set);
+        self.regs.p = p.bits();
+    }
+
+    /**
+     * set/unset the overflow flag
+     */
+    pub(crate) fn set_overflow(&mut self, set: bool) {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.set(CpuFlags::V, set);
+        self.regs.p = p.bits();
+    }
+
+    /**
+     * set/unset the zero flag
+     */
+    pub(crate) fn set_zero(&mut self, set: bool) {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.set(CpuFlags::Z, set);
+        self.regs.p = p.bits();
+    }
+
+    /**
+     * check if the D flag is set
+     */
+    pub(crate) fn is_decimal_set(&self) -> bool {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.contains(CpuFlags::D)
+    }
+
+    /**
+     * returns 1 if the carry flag is set
+     */
+    pub(crate) fn is_carry_set(&self) -> u8 {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        if p.contains(CpuFlags::C) {
+            return 1;
+        }
+        0
+    }
+
+    /**
      * activate logging on stdout trough env_logger (max level)
      */
     pub fn enable_logging(enable: bool) {

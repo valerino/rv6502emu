@@ -145,6 +145,9 @@ lazy_static! {
 }
 
 #[named]
+/**
+ * ADC implementation converted from c code, taken from https://github.com/DavidBuchanan314/6502-emu/blob/master/6502.c
+ */
 fn adc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
@@ -154,12 +157,39 @@ fn adc<A: AddressingMode>(
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
 
-    let p = CpuFlags::from_bits(c.regs.p).unwrap();
-    if p.contains(CpuFlags::D) {
-        // bcd mode
+    // and read byte
+    let b = A::load(c, tgt)?;
+
+    // perform the addition (regs.a+b+C)
+    let mut sum: u16;
+    if c.is_decimal_set() {
+        // bcd
+        sum = ((c.regs.a as u16) & 0x0f)
+            .wrapping_add((b as u16) & 0x0f)
+            .wrapping_add(c.is_carry_set() as u16);
+        if sum >= 10 {
+            sum = (sum.wrapping_sub(10)) | 10;
+            sum = sum
+                .wrapping_add((c.regs.a as u16) & 0xf0)
+                .wrapping_add((b as u16) & 0xf0);
+            if sum > 0x9f {
+                sum = sum.wrapping_add(0x60);
+            }
+        }
     } else {
-        // normal mode
+        // normal
+        sum = (c.regs.a as u16)
+            .wrapping_add(b as u16)
+            .wrapping_add(c.is_carry_set() as u16);
     }
+
+    // set flags
+    c.set_carry(sum > 0xff);
+    let o = ((c.regs.a as u16) ^ sum) & ((b as u16) ^ sum) & 0x80;
+    c.set_overflow(o != 0);
+    c.regs.a = (sum & 0xff) as u8;
+    c.set_zero(c.regs.a == 0);
+    c.set_negative(c.regs.a == 0);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -824,14 +854,53 @@ fn sax<A: AddressingMode>(
 }
 
 #[named]
+/**
+ * SBC implementation converted from c code, taken from https://github.com/DavidBuchanan314/6502-emu/blob/master/6502.c
+ */
 fn sbc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
+    // get target_address
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
 
+    // and read byte
+    let b = A::load(c, tgt)?;
+
+    // perform non-bcd subtraction (regs.a-b-1+C)
+    let sub: u16 = (c.regs.a as u16)
+        .wrapping_sub(b as u16)
+        .wrapping_sub(1)
+        .wrapping_add(c.is_carry_set() as u16);
+
+    if c.is_decimal_set() {
+        // bcd
+        let mut lo: u8 = (c.regs.a & 0x0f)
+            .wrapping_sub(b & 0x0f)
+            .wrapping_sub(1)
+            .wrapping_add(c.is_carry_set());
+        let mut hi: u8 = (c.regs.a >> 4).wrapping_sub(b >> 4);
+        if lo & 0x10 != 0 {
+            lo = lo.wrapping_sub(6);
+            hi = hi.wrapping_sub(1);
+        }
+        if hi & 0x10 != 0 {
+            hi = hi.wrapping_sub(6);
+        }
+        c.regs.a = (hi << 4) | (lo & 0x0f);
+    } else {
+        // normal
+        c.regs.a = (sub & 0xff) as u8;
+    }
+
+    // set flags
+    c.set_carry(sub < 0x100);
+    let o = ((c.regs.a as u16) ^ sub) & ((b as u16) ^ sub) & 0x80;
+    c.set_overflow(o != 0);
+    c.set_zero(c.regs.a == 0);
+    c.set_negative(c.regs.a == 0);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
