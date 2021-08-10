@@ -150,11 +150,8 @@ fn adc<A: AddressingMode>(
     extra_cycle_on_page_crossing: bool,
 ) -> Result<(u16, usize), MemoryError> {
     let (oprnd, extra_cycle) = A::operand(c)?;
-    //let opc_string = A::repr(c, function_name!(), oprnd)?;
-    //debug!("{}", opc_string);
     c.debug_out_opcode::<A>(function_name!(), oprnd)?;
     let instr_len = A::len();
-
     Ok((instr_len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 

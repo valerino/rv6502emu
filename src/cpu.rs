@@ -68,11 +68,11 @@ bitflags! {
      * flags (values for the P register).
      * https://www.atarimagazines.com/compute/issue53/047_1_All_About_The_Status_Register.php
      */
-    struct CpuFlags : u8 {
+    pub(crate) struct CpuFlags : u8 {
         /**
          * C (bit 0)—Carry flag. Carry is set whenever the accumulator rolls over from $FF to $00.
          */
-        const C = 0b00000000;
+        const C = 0b00000001;
         /**
          * Z (bit 1)—Zero flag. This one's used a great deal, and basically the computer sets it when the result of any operation is zero, i.e. Load the X-register with $00, and you set the zero flag,
          * subtract $32 from $32 and you set the zero flag, ...
@@ -134,8 +134,14 @@ impl Display for Registers {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(
             f,
-            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, P: {:08b}, S: ${:02x}",
-            self.pc, self.a, self.x, self.y, self.p, self.s
+            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, P: {:08b}({}), S: ${:02x}",
+            self.pc,
+            self.a,
+            self.x,
+            self.y,
+            self.p,
+            self.flags_to_string(),
+            self.s
         );
         Ok(())
     }
@@ -152,6 +158,25 @@ impl Registers {
             pc: 0,
         };
         r
+    }
+
+    /**
+     * convert P (flags) register to a meaningful string
+     */
+    fn flags_to_string(&self) -> String {
+        let p = CpuFlags::from_bits(self.p).unwrap();
+        let s = format!(
+            "{}{}{}{}{}{}{}{}",
+            if p.contains(CpuFlags::N) { "N" } else { "-" },
+            if p.contains(CpuFlags::V) { "V" } else { "-" },
+            if p.contains(CpuFlags::U) { "U" } else { "-" },
+            if p.contains(CpuFlags::B) { "B" } else { "-" },
+            if p.contains(CpuFlags::D) { "D" } else { "-" },
+            if p.contains(CpuFlags::I) { "I" } else { "-" },
+            if p.contains(CpuFlags::Z) { "Z" } else { "-" },
+            if p.contains(CpuFlags::C) { "C" } else { "-" },
+        );
+        s
     }
 }
 
@@ -241,17 +266,20 @@ impl Cpu {
                 .get_memory()
                 .read_word_le(Vectors::RESET as usize)?;
         }
+
         self.regs = Registers {
             a: 0,
             x: 0,
             y: 0,
-            p: (CpuFlags::U | CpuFlags::I).bits(), // I (enable interrupts), and the U flag is always set.
+
+            // I (enable interrupts), and the U flag is always set.
+            p: (CpuFlags::U | CpuFlags::I).bits(),
             s: 0xff,
 
             // at reset, we read PC from RESET vector
             pc: addr,
         };
-        debug!("RESET\n--> {}", self.regs);
+        debug!("RESET!");
         Ok(())
     }
 
@@ -274,9 +302,14 @@ impl Cpu {
             // fetch an instruction
             let b = self.fetch()?;
 
-            // decode and run
+            // decode
             let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing) =
                 opcodes::OPCODE_MATRIX[b as usize];
+
+            // print registers
+            self.debug_out_registers();
+
+            // execute
             let (instr_size, elapsed) =
                 match opcode_f(self, opcode_cycles, add_extra_cycle_on_page_crossing) {
                     // panic here ...
@@ -284,6 +317,7 @@ impl Cpu {
                     Err(e) => return Err(e),
                     Ok(ok) => ok,
                 };
+
             // advance pc and increment the elapsed cycles
             self.regs.pc += instr_size;
             self.cycles += elapsed;
