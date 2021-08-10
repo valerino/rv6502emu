@@ -212,6 +212,21 @@ pub struct Cpu {
 
 impl Cpu {
     /**
+     * call installed cpu callback if any
+     */
+    pub(crate) fn call_callback(&self, address: u16, value: u8, op: CpuOperation) {
+        if self.cb.is_some() {
+            // call callback
+            let ctx = CpuCallbackContext {
+                address: address,
+                value: value,
+                operation: op,
+            };
+            self.cb.unwrap()(ctx);
+        }
+    }
+
+    /**
      * activate logging on stdout trough env_logger (max level)
      */
     pub fn enable_logging(enable: bool) {
