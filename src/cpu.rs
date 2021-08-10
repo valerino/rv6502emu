@@ -37,7 +37,7 @@ use opcodes::*;
 use std::fmt::{Display, Error, Formatter};
 
 use bitflags::bitflags;
-mod addressing_modes;
+pub(crate) mod addressing_modes;
 
 /**
  * the cpu registers.
@@ -123,7 +123,7 @@ impl Display for CpuCallbackContext {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(
             f,
-            "CALLBACK! type={:?}, address=${:02x}, value=${:x}",
+            "CALLBACK! type={:?}, address=${:04x}, value=${:02x}",
             self.operation, self.address, self.value
         );
         Ok(())
@@ -134,7 +134,7 @@ impl Display for Registers {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(
             f,
-            "PC: ${:02x}, A: ${:x}, X: ${:x}, Y: ${:x}, P: {:08b}, S: ${:x}",
+            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, P: {:08b}, S: ${:02x}",
             self.pc, self.a, self.x, self.y, self.p, self.s
         );
         Ok(())
