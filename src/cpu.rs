@@ -229,7 +229,7 @@ impl Cpu {
     /**
      * set/unset the carry flag
      */
-    pub(crate) fn set_carry(&mut self, set: bool) {
+    pub(crate) fn set_carry_flag(&mut self, set: bool) {
         let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
         p.set(CpuFlags::C, set);
         self.regs.p = p.bits();
@@ -238,7 +238,7 @@ impl Cpu {
     /**
      * set/unset the negative flag
      */
-    pub(crate) fn set_negative(&mut self, set: bool) {
+    pub(crate) fn set_negative_flag(&mut self, set: bool) {
         let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
         p.set(CpuFlags::N, set);
         self.regs.p = p.bits();
@@ -247,7 +247,7 @@ impl Cpu {
     /**
      * set/unset the overflow flag
      */
-    pub(crate) fn set_overflow(&mut self, set: bool) {
+    pub(crate) fn set_overflow_flag(&mut self, set: bool) {
         let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
         p.set(CpuFlags::V, set);
         self.regs.p = p.bits();
@@ -256,9 +256,36 @@ impl Cpu {
     /**
      * set/unset the zero flag
      */
-    pub(crate) fn set_zero(&mut self, set: bool) {
+    pub(crate) fn set_zero_flag(&mut self, set: bool) {
         let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
         p.set(CpuFlags::Z, set);
+        self.regs.p = p.bits();
+    }
+
+    /**
+     * set/unset the decimal flag
+     */
+    pub(crate) fn set_decimal_flag(&mut self, set: bool) {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.set(CpuFlags::D, set);
+        self.regs.p = p.bits();
+    }
+
+    /**
+     * set/unset the interrupt disable flag
+     */
+    pub(crate) fn set_interrupt_disable_flag(&mut self, set: bool) {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.set(CpuFlags::I, set);
+        self.regs.p = p.bits();
+    }
+
+    /**
+     * set/unset the break flag
+     */
+    pub(crate) fn set_break_flag(&mut self, set: bool) {
+        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.set(CpuFlags::B, set);
         self.regs.p = p.bits();
     }
 

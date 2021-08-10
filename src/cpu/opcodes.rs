@@ -184,12 +184,12 @@ fn adc<A: AddressingMode>(
     }
 
     // set flags
-    c.set_carry(sum > 0xff);
+    c.set_carry_flag(sum > 0xff);
     let o = ((c.regs.a as u16) ^ sum) & ((b as u16) ^ sum) & 0x80;
-    c.set_overflow(o != 0);
+    c.set_overflow_flag(o != 0);
     c.regs.a = (sum & 0xff) as u8;
-    c.set_zero(c.regs.a == 0);
-    c.set_negative(c.regs.a == 0);
+    c.set_zero_flag(c.regs.a == 0);
+    c.set_negative_flag(c.regs.a == 0);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -407,6 +407,9 @@ fn clc<A: AddressingMode>(
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
 
+    // clear carry
+    c.set_carry_flag(false);
+
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -419,6 +422,8 @@ fn cld<A: AddressingMode>(
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
 
+    // clear decimal flag
+    c.set_decimal_flag(false);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -431,6 +436,9 @@ fn cli<A: AddressingMode>(
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
 
+    // enable interrupts, clear the flag
+    c.set_interrupt_disable_flag(false);
+
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -442,6 +450,9 @@ fn clv<A: AddressingMode>(
 ) -> Result<(u16, usize), MemoryError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+
+    // clear the overflow flag
+    c.set_overflow_flag(false);
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -658,6 +669,14 @@ fn lda<A: AddressingMode>(
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
 
+    // load byte to A
+    let b = A::load(c, tgt)?;
+    c.regs.a = b;
+
+    // set flags
+    c.set_negative_flag(c.regs.a > 0x7f);
+    c.set_zero_flag(c.regs.a == 0);
+
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -669,7 +688,13 @@ fn ldx<A: AddressingMode>(
 ) -> Result<(u16, usize), MemoryError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    // load byte to X
+    let b = A::load(c, tgt)?;
+    c.regs.x = b;
 
+    // set flags
+    c.set_negative_flag(c.regs.x > 0x7f);
+    c.set_zero_flag(c.regs.x == 0);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -896,11 +921,11 @@ fn sbc<A: AddressingMode>(
     }
 
     // set flags
-    c.set_carry(sub < 0x100);
+    c.set_carry_flag(sub < 0x100);
     let o = ((c.regs.a as u16) ^ sub) & ((b as u16) ^ sub) & 0x80;
-    c.set_overflow(o != 0);
-    c.set_zero(c.regs.a == 0);
-    c.set_negative(c.regs.a == 0);
+    c.set_overflow_flag(o != 0);
+    c.set_zero_flag(c.regs.a == 0);
+    c.set_negative_flag(c.regs.a == 0);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -912,6 +937,9 @@ fn sec<A: AddressingMode>(
 ) -> Result<(u16, usize), MemoryError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+
+    // set carry
+    c.set_carry_flag(true);
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -925,6 +953,8 @@ fn sed<A: AddressingMode>(
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
 
+    // set decimal flag
+    c.set_decimal_flag(true);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -936,6 +966,9 @@ fn sei<A: AddressingMode>(
 ) -> Result<(u16, usize), MemoryError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+
+    // disable interrupts
+    c.set_interrupt_disable_flag(true);
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
