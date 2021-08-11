@@ -32,6 +32,7 @@ use log::*;
 use rv6502emu::cpu::Cpu;
 use rv6502emu::cpu::CpuCallbackContext;
 use rv6502emu::memory::Memory;
+
 fn test_inner(mem: &mut Box<dyn Memory>) {
     let b = mem.read_byte(123).unwrap();
     info!("b after write 2={:x}", b);
@@ -58,8 +59,8 @@ fn test_read_writes(mem: &mut Box<dyn Memory>) {
     assert_eq!(b, 0xfc)
 }
 
-fn test_callback(cb: CpuCallbackContext) {
-    info!("hello from callback {:?}", cb);
+fn test_callback(c: &mut Cpu, cb: CpuCallbackContext) {
+    c.debug_out_text(format!("{}", cb));
 }
 
 /**
@@ -67,13 +68,12 @@ fn test_callback(cb: CpuCallbackContext) {
  */
 #[test]
 fn test_cpu() {
-    // init logger
-    let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::max())
-        .try_init();
-
-    // create a cpu with default bus and 64k memory
+    // create a cpu with default bus and 64k memory, stdin debugger enabled
     let mut c = Cpu::new_default(0x10000, Some(test_callback), true);
+
+    // enable stdout logger
+    c.enable_logging(true);
+
     let mem = c.bus.get_memory();
 
     // load test file

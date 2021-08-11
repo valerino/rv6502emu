@@ -112,7 +112,6 @@ bitflags! {
 /**
  * this is called by the cpu to provide the user with notification when reads/writes/irq/nmi occurs.
  */
-#[derive(Debug)]
 pub struct CpuCallbackContext {
     pub address: u16,
     pub value: u8,
@@ -125,7 +124,8 @@ impl Display for CpuCallbackContext {
             f,
             "CALLBACK! type={:?}, address=${:04x}, value=${:02x}",
             self.operation, self.address, self.value
-        );
+        )
+        .expect("");
         Ok(())
     }
 }
@@ -142,7 +142,9 @@ impl Display for Registers {
             self.p,
             self.flags_to_string(),
             self.s
-        );
+        )
+        .expect("");
+
         Ok(())
     }
 }
@@ -207,14 +209,14 @@ pub struct Cpu {
     pub bus: Box<dyn Bus>,
 
     // callback for the user (optional).
-    pub cb: Option<fn(cb: CpuCallbackContext)>,
+    pub cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
 }
 
 impl Cpu {
     /**
      * call installed cpu callback if any
      */
-    pub(crate) fn call_callback(&self, address: u16, value: u8, op: CpuOperation) {
+    pub(crate) fn call_callback(&mut self, address: u16, value: u8, op: CpuOperation) {
         if self.cb.is_some() {
             // call callback
             let ctx = CpuCallbackContext {
@@ -222,7 +224,7 @@ impl Cpu {
                 value: value,
                 operation: op,
             };
-            self.cb.unwrap()(ctx);
+            self.cb.unwrap()(self, ctx);
         }
     }
 
@@ -309,20 +311,13 @@ impl Cpu {
     }
 
     /**
-     * activate logging on stdout trough env_logger (max level)
-     */
-    pub fn enable_logging(enable: bool) {
-        if enable == true {
-            let _ = env_logger::builder()
-                .filter_level(log::LevelFilter::max())
-                .try_init();
-        }
-    }
-
-    /**
      * creates a new cpu instance, with the given Bus attached.
      */
-    pub fn new(b: Box<dyn Bus>, cb: Option<fn(cb: CpuCallbackContext)>, debug: bool) -> Cpu {
+    pub fn new(
+        b: Box<dyn Bus>,
+        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
+        debug: bool,
+    ) -> Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
@@ -338,7 +333,7 @@ impl Cpu {
      */
     pub fn new_default(
         mem_size: usize,
-        cb: Option<fn(cb: CpuCallbackContext)>,
+        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
         debug: bool,
     ) -> Cpu {
         let m = super::memory::new_default(mem_size);
@@ -376,7 +371,8 @@ impl Cpu {
             // at reset, we read PC from RESET vector
             pc: addr,
         };
-        debug!("RESET!");
+
+        self.debug_out_text("RESET!");
         Ok(())
     }
 
@@ -403,7 +399,7 @@ impl Cpu {
             let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing) =
                 opcodes::OPCODE_MATRIX[b as usize];
 
-            // print registers
+            // print registers before
             self.debug_out_registers();
 
             // execute
@@ -417,9 +413,21 @@ impl Cpu {
                     },
                 );
 
-            // advance pc and increment the elapsed cycles
-            self.regs.pc += instr_size as u16;
-            self.cycles += elapsed;
+            // handles debugger if any
+            let debugger_res = self.handle_debugger_input_stdin()?;
+            match debugger_res {
+                's' => {
+                    // step(default), advance pc and increment the elapsed cycles
+                    self.regs.pc += instr_size as u16;
+                    self.cycles += elapsed;
+                }
+                'q' => {
+                    // gracefully exit
+                    break;
+                }
+                _ => {}
+            }
+
             if cycles != 0 && elapsed >= cycles {
                 break;
             }

@@ -1091,7 +1091,8 @@ fn sta<A: AddressingMode>(
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // store A in memory
+    A::store(c, tgt, c.regs.a)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
