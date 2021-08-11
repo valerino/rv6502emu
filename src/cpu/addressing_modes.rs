@@ -28,11 +28,8 @@
  * SOFTWARE.
  */
 
-use crate::cpu::Cpu;
-use crate::cpu::CpuCallbackContext;
-use crate::cpu::CpuOperation;
-use crate::memory::memory_error::MemoryError;
-use log::*;
+use crate::cpu::cpu_error::CpuError;
+use crate::cpu::{Cpu, CpuOperation};
 
 /**
  * http://www.emulator101.com/6502-addressing-modes.html
@@ -42,14 +39,14 @@ pub trait AddressingMode {
     /**
      * the instruction size
      */
-    fn len() -> u16 {
+    fn len() -> i8 {
         1
     }
 
     /**
      * string representation
      */
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         Ok(String::from(opcode_name.to_uppercase()))
     }
 
@@ -59,14 +56,14 @@ pub trait AddressingMode {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         Ok((0, false))
     }
 
     /**
      * load byte from address
      */
-    fn load(c: &mut Cpu, address: u16) -> Result<u8, MemoryError> {
+    fn load(c: &mut Cpu, address: u16) -> Result<u8, CpuError> {
         let m = c.bus.get_memory();
         let b = m.read_byte(address as usize)?;
 
@@ -78,7 +75,7 @@ pub trait AddressingMode {
     /**
      * store byte to address
      */
-    fn store(c: &mut Cpu, address: u16, b: u8) -> Result<(), MemoryError> {
+    fn store(c: &mut Cpu, address: u16, b: u8) -> Result<(), CpuError> {
         let m = c.bus.get_memory();
         m.write_byte(address as usize, b)?;
 
@@ -120,7 +117,7 @@ fn get_relative_branch_target(src_pc: u16, branch_offset: u16) -> (u16, bool) {
  */
 pub struct AccumulatorAddressing;
 impl AddressingMode for AccumulatorAddressing {
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = _c.bus.get_memory().read_byte(_c.regs.pc as usize)?;
         Ok(format!(
             "${:04x}:\t{:x}\t\t-->\t{} A",
@@ -133,15 +130,15 @@ impl AddressingMode for AccumulatorAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         // implied A
         Ok((0, false))
     }
 
-    fn load(c: &mut Cpu, _: u16) -> Result<u8, MemoryError> {
+    fn load(c: &mut Cpu, _: u16) -> Result<u8, CpuError> {
         Ok(c.regs.a)
     }
-    fn store(c: &mut Cpu, _: u16, b: u8) -> Result<(), MemoryError> {
+    fn store(c: &mut Cpu, _: u16, b: u8) -> Result<(), CpuError> {
         c.regs.a = b;
         Ok(())
     }
@@ -153,11 +150,11 @@ impl AddressingMode for AccumulatorAddressing {
  */
 pub struct AbsoluteAddressing;
 impl AddressingMode for AbsoluteAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         3
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -176,7 +173,7 @@ impl AddressingMode for AbsoluteAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         let w = _c
             .bus
             .get_memory()
@@ -192,11 +189,11 @@ impl AddressingMode for AbsoluteAddressing {
  */
 pub struct AbsoluteXAddressing;
 impl AddressingMode for AbsoluteXAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         3
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -215,7 +212,7 @@ impl AddressingMode for AbsoluteXAddressing {
     fn target_address(
         _c: &mut Cpu,
         add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         let w = _c
             .bus
             .get_memory()
@@ -237,11 +234,11 @@ impl AddressingMode for AbsoluteXAddressing {
  */
 pub struct AbsoluteYAddressing;
 impl AddressingMode for AbsoluteYAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         3
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -260,7 +257,7 @@ impl AddressingMode for AbsoluteYAddressing {
     fn target_address(
         _c: &mut Cpu,
         add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         let w = _c
             .bus
             .get_memory()
@@ -281,11 +278,11 @@ impl AddressingMode for AbsoluteYAddressing {
  */
 pub struct ImmediateAddressing;
 impl AddressingMode for ImmediateAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         2
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -302,7 +299,7 @@ impl AddressingMode for ImmediateAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
         Ok((w as u16, false))
     }
@@ -313,7 +310,7 @@ impl AddressingMode for ImmediateAddressing {
  */
 pub struct ImpliedAddressing;
 impl AddressingMode for ImpliedAddressing {
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = _c.bus.get_memory().read_byte(_c.regs.pc as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x}\t\t-->\t{}",
@@ -330,11 +327,11 @@ impl AddressingMode for ImpliedAddressing {
  */
 pub struct IndirectAddressing;
 impl AddressingMode for IndirectAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         3
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -353,7 +350,7 @@ impl AddressingMode for IndirectAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         // read address
         let w = _c
             .bus
@@ -377,11 +374,11 @@ impl AddressingMode for IndirectAddressing {
  */
 pub struct XIndirectAddressing;
 impl AddressingMode for XIndirectAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         2
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -398,7 +395,7 @@ impl AddressingMode for XIndirectAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         // read address in zeropage
         let mut w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
 
@@ -423,10 +420,10 @@ impl AddressingMode for XIndirectAddressing {
  */
 pub struct IndirectYAddressing;
 impl AddressingMode for IndirectYAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         2
     }
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -443,7 +440,7 @@ impl AddressingMode for IndirectYAddressing {
     fn target_address(
         _c: &mut Cpu,
         add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         // read address contained at address in the zeropage
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
         let mut ww = _c.bus.get_memory().read_word_le(w as usize)?;
@@ -468,11 +465,11 @@ impl AddressingMode for IndirectYAddressing {
  */
 pub struct RelativeAddressing;
 impl AddressingMode for RelativeAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         2
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -489,7 +486,7 @@ impl AddressingMode for RelativeAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         // this is the offset to be added (signed) to PC
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
 
@@ -507,11 +504,11 @@ impl AddressingMode for RelativeAddressing {
  */
 pub struct ZeroPageAddressing;
 impl AddressingMode for ZeroPageAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         2
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -528,7 +525,7 @@ impl AddressingMode for ZeroPageAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         // read address in the zeropage
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
 
@@ -543,11 +540,11 @@ impl AddressingMode for ZeroPageAddressing {
  */
 pub struct ZeroPageXAddressing;
 impl AddressingMode for ZeroPageXAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         2
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -564,7 +561,7 @@ impl AddressingMode for ZeroPageXAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         // read address in the zeropage
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
 
@@ -581,11 +578,11 @@ impl AddressingMode for ZeroPageXAddressing {
  */
 pub struct ZeroPageYAddressing;
 impl AddressingMode for ZeroPageYAddressing {
-    fn len() -> u16 {
+    fn len() -> i8 {
         2
     }
 
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, MemoryError> {
+    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
@@ -602,7 +599,7 @@ impl AddressingMode for ZeroPageYAddressing {
     fn target_address(
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), MemoryError> {
+    ) -> Result<(u16, bool), CpuError> {
         // read address in the zeropage
         let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
 

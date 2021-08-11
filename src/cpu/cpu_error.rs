@@ -1,5 +1,5 @@
 /*
- * Filename: /src/memory/mem_error.rs
+ * Filename: /src/cpu/cpu_error.rs
  * Project: rv6502emu
  * Created Date: Saturday, July 5rd 2021, 09:11:09 am
  * Author: valerino <xoanino@gmail.com>
@@ -28,91 +28,119 @@
  * SOFTWARE.
  */
 
-use super::Memory;
+use crate::memory::Memory;
 use std::fmt;
 
 /**
- * type of memory operation
+ * type of cpu error.
  */
 #[derive(PartialEq, Debug)]
-pub enum MemoryOperation {
-    /// reads from memory
-    Read,
-    /// writes to memory
-    Write,
-    /// loads a file to memory
-    Load,
+pub enum ErrorType {
+    /// reads from memory.
+    MemoryRead,
+    /// writes to memory.
+    MemoryWrite,
+    /// loads a file to memory.
+    MemoryLoad,
+    /// invalid instruction.
+    InvalidOpcode,
 }
+pub type CpuErrorType = self::ErrorType;
 
-impl std::fmt::Display for MemoryOperation {
+impl std::fmt::Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MemoryOperation::Read => write!(f, "Read"),
-            MemoryOperation::Write => write!(f, "Write"),
-            MemoryOperation::Load => write!(f, "Load"),
+            ErrorType::MemoryRead => write!(f, "MemRead"),
+            ErrorType::MemoryWrite => write!(f, "MemWrite"),
+            ErrorType::MemoryLoad => write!(f, "MemLoad"),
+            ErrorType::InvalidOpcode => write!(f, "InvalidOpcode"),
         }
     }
 }
 
 /**
- * to report errors within the memory module
+ * to report errors within the whole crate
  */
 #[derive(Debug)]
-pub struct MemoryError {
-    operation: MemoryOperation,
+pub struct Error {
+    pub operation: ErrorType,
     address: usize,
     access_size: usize,
     mem_size: usize,
-    msg: String,
+    msg: Option<String>,
 }
+pub type CpuError = self::Error;
 
-impl std::error::Error for MemoryError {}
+impl std::error::Error for CpuError {}
 
-impl std::fmt::Display for MemoryError {
+impl std::fmt::Display for CpuError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
-        if self.operation == MemoryOperation::Load {
-            write!(f, "MemoryError ({}), msg={}", self.operation, self.msg,)
+        if self.operation == ErrorType::MemoryLoad {
+            write!(
+                f,
+                "Error ({}), msg={}",
+                self.operation,
+                self.msg.as_ref().unwrap(),
+            )
+        } else if self.operation == ErrorType::InvalidOpcode {
+            write!(f, "Error ({})", self.operation,)
         } else {
             write!(
                 f,
-                "MemoryError ({}) at address=${:x}, access size={}, max memory size={}",
+                "Error ({}) at address=${:x}, access size={}, max memory size={}",
                 self.operation, self.address, self.access_size, self.mem_size,
             )
         }
     }
 }
 
-impl From<std::io::Error> for MemoryError {
+impl From<std::io::Error> for CpuError {
     fn from(err: std::io::Error) -> Self {
-        MemoryError {
-            operation: MemoryOperation::Load,
+        let e = CpuError {
+            operation: ErrorType::MemoryLoad,
             address: 0,
-            access_size: 0,
             mem_size: 0,
-            msg: err.to_string(),
-        }
+            access_size: 0,
+            msg: Some(err.to_string()),
+        };
+        e
     }
+}
+
+/**
+ * creates an invalid opcode error.
+ */
+pub(crate) fn new_invalid_opcode_error(address: usize) -> CpuError {
+    let e = CpuError {
+        operation: ErrorType::InvalidOpcode,
+        address: address,
+        mem_size: 0,
+        access_size: 0,
+        msg: None,
+    };
+    return e;
 }
 
 /**
  * check memory boundaries during access
  */
-pub fn check_address(
+pub(crate) fn check_address(
     mem: &dyn Memory,
     address: usize,
     access_size: usize,
-    op: MemoryOperation,
-) -> Result<(), MemoryError> {
+    // we use the ErrorType to identify the operation (read/write/load)
+    op: ErrorType,
+) -> Result<(), Error> {
     // check if memory access overflows
     let mem_size = mem.get_size();
     if address + access_size > mem_size {
-        // overflow
-        let e = MemoryError {
+        // report read or write error
+        let e = CpuError {
             operation: op,
             address: address,
             mem_size: mem_size,
             access_size: access_size,
-            msg: String::from(""),
+            msg: None,
         };
         return Err(e);
     }

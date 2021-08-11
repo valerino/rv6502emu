@@ -41,3 +41,6 @@ pub mod memory;
 
 /// implements the emulated bus.
 pub mod bus;
+
+/// utilities
+pub(crate) mod utils;

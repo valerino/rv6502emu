@@ -28,9 +28,9 @@
  * SOFTWARE.
  */
 
-pub mod memory_error;
+use crate::cpu::cpu_error;
+use crate::cpu::cpu_error::{CpuError, CpuErrorType};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use memory_error::{MemoryError, MemoryOperation};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Cursor;
@@ -43,17 +43,17 @@ pub trait Memory {
     /**
      * reads a byte at address.
      */
-    fn read_byte(&mut self, address: usize) -> Result<u8, MemoryError>;
+    fn read_byte(&mut self, address: usize) -> Result<u8, CpuError>;
 
     /**
      * reads a word (little-endian) at address.
      */
-    fn read_word_le(&mut self, address: usize) -> Result<u16, MemoryError>;
+    fn read_word_le(&mut self, address: usize) -> Result<u16, CpuError>;
 
     /**
      * writes a byte at address.
      */
-    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), MemoryError>;
+    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), CpuError>;
 
     /**
      * get memory size.
@@ -63,7 +63,7 @@ pub trait Memory {
     /**
      * load file in memory at address.
      */
-    fn load(&mut self, path: &str, address: usize) -> Result<(), MemoryError>;
+    fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError>;
 }
 
 /**
@@ -75,23 +75,23 @@ struct DefaultMemory {
 }
 
 impl Memory for DefaultMemory {
-    fn read_byte(&mut self, address: usize) -> Result<u8, MemoryError> {
-        memory_error::check_address(self, address, 1, MemoryOperation::Read)?;
+    fn read_byte(&mut self, address: usize) -> Result<u8, CpuError> {
+        cpu_error::check_address(self, address, 1, CpuErrorType::MemoryRead)?;
         self.cur.set_position(address as u64);
         let res = self.cur.read_u8()?;
         Ok(res)
     }
 
-    fn read_word_le(&mut self, address: usize) -> Result<u16, MemoryError> {
-        memory_error::check_address(self, address, 2, MemoryOperation::Read)?;
+    fn read_word_le(&mut self, address: usize) -> Result<u16, CpuError> {
+        cpu_error::check_address(self, address, 2, CpuErrorType::MemoryRead)?;
 
         self.cur.set_position(address as u64);
         let res = self.cur.read_u16::<LittleEndian>()?;
         Ok(res)
     }
 
-    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), MemoryError> {
-        memory_error::check_address(self, address, 1, MemoryOperation::Write)?;
+    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), CpuError> {
+        cpu_error::check_address(self, address, 1, CpuErrorType::MemoryWrite)?;
 
         self.cur.set_position(address as u64);
         self.cur.write_u8(b)?;
@@ -102,10 +102,10 @@ impl Memory for DefaultMemory {
         self.size
     }
 
-    fn load(&mut self, path: &str, address: usize) -> Result<(), MemoryError> {
+    fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError> {
         // check filesize
         let attr = std::fs::metadata(path)?;
-        memory_error::check_address(self, address, attr.len() as usize, MemoryOperation::Load)?;
+        cpu_error::check_address(self, address, attr.len() as usize, CpuErrorType::MemoryLoad)?;
 
         // read file to a tmp vec
         let mut f = File::open(path)?;

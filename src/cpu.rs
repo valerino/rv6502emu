@@ -29,15 +29,15 @@
  */
 
 use crate::bus::Bus;
-use crate::memory::memory_error::MemoryError;
-use crate::memory::Memory;
 use log::*;
 mod opcodes;
-use opcodes::*;
 use std::fmt::{Display, Error, Formatter};
 
 use bitflags::bitflags;
 pub(crate) mod addressing_modes;
+
+pub mod cpu_error;
+use cpu_error::{CpuError, CpuErrorType};
 
 /**
  * the cpu registers.
@@ -293,7 +293,7 @@ impl Cpu {
      * check if the D flag is set
      */
     pub(crate) fn is_decimal_set(&self) -> bool {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        let p = CpuFlags::from_bits(self.regs.p).unwrap();
         p.contains(CpuFlags::D)
     }
 
@@ -301,7 +301,7 @@ impl Cpu {
      * returns 1 if the carry flag is set
      */
     pub(crate) fn is_carry_set(&self) -> u8 {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
+        let p = CpuFlags::from_bits(self.regs.p).unwrap();
         if p.contains(CpuFlags::C) {
             return 1;
         }
@@ -350,7 +350,7 @@ impl Cpu {
      * resets the cpu setting all registers to the initial values.
      * http://forum.6502.org/viewtopic.php?p=2959
      */
-    pub fn reset(&mut self, start_address: Option<u16>) -> Result<(), MemoryError> {
+    pub fn reset(&mut self, start_address: Option<u16>) -> Result<(), CpuError> {
         let addr: u16;
         if let Some(a) = start_address {
             // use the provided address
@@ -383,7 +383,7 @@ impl Cpu {
     /**
      * fetch opcode at PC
      */
-    fn fetch(&mut self) -> Result<u8, MemoryError> {
+    fn fetch(&mut self) -> Result<u8, CpuError> {
         let mem = self.bus.get_memory();
         let b = mem.read_byte(self.regs.pc as usize)?;
         Ok(b)
@@ -394,7 +394,7 @@ impl Cpu {
      *
      * > note that reset() must be called first to set the start address !
      */
-    pub fn run(&mut self, cycles: usize) -> Result<(), MemoryError> {
+    pub fn run(&mut self, cycles: usize) -> Result<(), CpuError> {
         loop {
             // fetch an instruction
             let b = self.fetch()?;
@@ -408,15 +408,17 @@ impl Cpu {
 
             // execute
             let (instr_size, elapsed) =
-                match opcode_f(self, opcode_cycles, add_extra_cycle_on_page_crossing) {
-                    // panic here ...
-                    // TODO: break on debug
-                    Err(e) => return Err(e),
-                    Ok(ok) => ok,
-                };
+                opcode_f(self, opcode_cycles, add_extra_cycle_on_page_crossing).unwrap_or_else(
+                    |e| {
+                        // error !
+                        // TODO: handle with debugger if attached
+                        debug!("{}", e);
+                        panic!();
+                    },
+                );
 
             // advance pc and increment the elapsed cycles
-            self.regs.pc += instr_size;
+            self.regs.pc += instr_size as u16;
             self.cycles += elapsed;
             if cycles != 0 && elapsed >= cycles {
                 break;
