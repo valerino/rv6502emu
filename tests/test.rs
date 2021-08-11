@@ -60,7 +60,7 @@ fn test_read_writes(mem: &mut Box<dyn Memory>) {
 }
 
 fn test_callback(c: &mut Cpu, cb: CpuCallbackContext) {
-    c.debug_out_text(format!("{}", cb));
+    info!("{}", cb);
 }
 
 /**

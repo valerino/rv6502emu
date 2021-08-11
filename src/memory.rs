@@ -64,6 +64,11 @@ pub trait Memory {
      * load file in memory at address.
      */
     fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError>;
+
+    /**
+     * gets a reference to the underlying buffer.
+     */
+    fn as_vec(&self) -> &Vec<u8>;
 }
 
 /**
@@ -75,6 +80,10 @@ struct DefaultMemory {
 }
 
 impl Memory for DefaultMemory {
+    fn as_vec(&self) -> &Vec<u8> {
+        let v = self.cur.get_ref();
+        v
+    }
     fn read_byte(&mut self, address: usize) -> Result<u8, CpuError> {
         cpu_error::check_address(self, address, 1, CpuErrorType::MemoryRead)?;
         self.cur.set_position(address as u64);

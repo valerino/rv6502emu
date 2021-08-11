@@ -40,15 +40,16 @@ lazy_static! {
     /**
      * the 256 opcodes table (includes undocumented)
      *
-     * each opcode gets in input a reference to the Cpu, the cycles needed to execute the opcode, and a boolean to indicate if, on crossing page boundaries, an extra cycles must be added.
+     * each opcode gets in input a reference to the Cpu, the cycles needed to execute the opcode, a boolean to indicate if, on crossing page boundaries, an extra cycles must be added and
+     * another boolean to indicate decoding only (no execution, for the disassembler).
      * returns a tuple with the instruction size and the effective elapsed cycles (may include the aferomentioned additional cycle).
      *
      * for clarity, each Vec element is a tuple defined as this (with named return values):
      *
-     * (< fn(c: &mut Cpu, in_cycles: usize, extra_cycle_on_page_crossing: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, in_cycles: usize, add_extra_cycle:bool) >)
+     * (< fn(c: &mut Cpu, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, in_cycles: usize, add_extra_cycle:bool) >)
      *
      */
-    pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, in_cycles: usize, extra_cycle_on_page_crossing: bool) -> Result<(i8, usize), CpuError>, usize, bool)> =
+    pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool) -> Result<(i8, usize), CpuError>, usize, bool)> =
         vec![
             // 0x0 - 0xf
             (brk::<ImpliedAddressing>, 7, false), (ora::<XIndirectAddressing>, 6, false), (kil::<ImpliedAddressing>, 0, false), (slo::<XIndirectAddressing>, 8, false),
@@ -156,10 +157,15 @@ fn adc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((0, 0));
+    }
 
     // and read byte
     let b = A::load(c, tgt)?;
@@ -202,10 +208,16 @@ fn ahx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -216,9 +228,15 @@ fn alr<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -229,9 +247,15 @@ fn anc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -242,9 +266,14 @@ fn and<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -255,9 +284,15 @@ fn arr<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -268,9 +303,15 @@ fn asl<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -281,9 +322,15 @@ fn axs<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -294,9 +341,15 @@ fn bcc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -307,9 +360,15 @@ fn bcs<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -320,9 +379,15 @@ fn beq<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -333,9 +398,15 @@ fn bit<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -346,9 +417,15 @@ fn bmi<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -359,9 +436,15 @@ fn bne<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -372,9 +455,15 @@ fn bpl<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -385,9 +474,15 @@ fn brk<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -398,9 +493,15 @@ fn bvc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -411,9 +512,15 @@ fn bvs<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -424,9 +531,14 @@ fn clc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // clear carry
     c.set_carry_flag(false);
@@ -438,9 +550,14 @@ fn cld<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // clear decimal flag
     c.set_decimal_flag(false);
@@ -452,9 +569,14 @@ fn cli<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // enable interrupts, clear the flag
     c.set_interrupt_disable_flag(false);
@@ -466,9 +588,14 @@ fn clv<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // clear the overflow flag
     c.set_overflow_flag(false);
@@ -480,9 +607,15 @@ fn cmp<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -493,9 +626,15 @@ fn cpx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -506,9 +645,15 @@ fn cpy<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -519,9 +664,15 @@ fn dcp<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -532,9 +683,15 @@ fn dec<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -545,9 +702,15 @@ fn dex<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -558,9 +721,15 @@ fn dey<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -571,9 +740,15 @@ fn eor<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -584,9 +759,15 @@ fn inc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -597,9 +778,15 @@ fn isc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -610,9 +797,15 @@ fn inx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -623,9 +816,15 @@ fn iny<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -636,9 +835,15 @@ fn jmp<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -649,9 +854,15 @@ fn jsr<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -662,9 +873,15 @@ fn kil<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     // this is an invalid opcode and emulation should be halted!
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     Err(cpu_error::new_invalid_opcode_error(c.regs.pc as usize))
 }
 
@@ -673,9 +890,15 @@ fn las<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -686,9 +909,15 @@ fn lax<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
     panic!("*** NOT IMPLEMENTED ***");
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -699,9 +928,14 @@ fn lda<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // load byte to A
     let b = A::load(c, tgt)?;
@@ -719,9 +953,14 @@ fn ldx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // load byte to X
     let b = A::load(c, tgt)?;
@@ -738,9 +977,14 @@ fn ldy<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // load byte to Y
     let b = A::load(c, tgt)?;
@@ -758,9 +1002,14 @@ fn lsr<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -771,9 +1020,14 @@ fn nop<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // noop, do nothing ...
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -784,9 +1038,14 @@ fn ora<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -797,9 +1056,14 @@ fn pha<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -810,9 +1074,14 @@ fn php<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -823,9 +1092,14 @@ fn pla<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -836,9 +1110,14 @@ fn plp<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -849,9 +1128,14 @@ fn rla<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -862,9 +1146,14 @@ fn rol<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -875,9 +1164,14 @@ fn ror<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -888,9 +1182,14 @@ fn rra<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -901,9 +1200,14 @@ fn rti<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -914,9 +1218,14 @@ fn rts<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -927,9 +1236,14 @@ fn sax<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -943,10 +1257,15 @@ fn sbc<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // and read byte
     let b = A::load(c, tgt)?;
@@ -991,9 +1310,14 @@ fn sec<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // set carry
     c.set_carry_flag(true);
@@ -1006,9 +1330,14 @@ fn sed<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // set decimal flag
     c.set_decimal_flag(true);
@@ -1020,9 +1349,14 @@ fn sei<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // disable interrupts
     c.set_interrupt_disable_flag(true);
@@ -1035,9 +1369,14 @@ fn shx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1048,9 +1387,14 @@ fn shy<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1061,9 +1405,14 @@ fn slo<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1074,9 +1423,14 @@ fn sre<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1087,9 +1441,14 @@ fn sta<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // store A in memory
     A::store(c, tgt, c.regs.a)?;
@@ -1101,9 +1460,14 @@ fn stx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1114,9 +1478,14 @@ fn sty<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1127,9 +1496,14 @@ fn tas<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1140,9 +1514,14 @@ fn tax<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1153,9 +1532,14 @@ fn tay<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1166,9 +1550,14 @@ fn tsx<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1179,9 +1568,14 @@ fn txa<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1192,9 +1586,14 @@ fn txs<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     // X -> S
     c.regs.s = c.regs.x;
@@ -1206,9 +1605,14 @@ fn tya<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1219,9 +1623,14 @@ fn xaa<A: AddressingMode>(
     c: &mut Cpu,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     c.debug_out_opcode::<A>(function_name!())?;
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
 
     panic!("*** NOT IMPLEMENTED ***");
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))

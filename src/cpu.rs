@@ -30,7 +30,7 @@
 
 use crate::bus::Bus;
 use log::*;
-mod opcodes;
+pub(crate) mod opcodes;
 use std::fmt::{Display, Error, Formatter};
 
 use bitflags::bitflags;
@@ -205,6 +205,9 @@ pub struct Cpu {
     // debugger enabled/disabled.
     pub debug: bool,
 
+    // set to show registers after step in the debugger, default is false (use the 'r' command).
+    debug_show_registers_after_step: bool,
+
     /// the bus.
     pub bus: Box<dyn Bus>,
 
@@ -323,6 +326,7 @@ impl Cpu {
             cycles: 0,
             bus: b,
             debug: debug,
+            debug_show_registers_after_step: false,
             cb: cb,
         };
         c
@@ -372,14 +376,14 @@ impl Cpu {
             pc: addr,
         };
 
-        self.debug_out_text("RESET!");
+        //self.debug_out_text("RESET!");
         Ok(())
     }
 
     /**
      * fetch opcode at PC
      */
-    fn fetch(&mut self) -> Result<u8, CpuError> {
+    pub(crate) fn fetch(&mut self) -> Result<u8, CpuError> {
         let mem = self.bus.get_memory();
         let b = mem.read_byte(self.regs.pc as usize)?;
         Ok(b)
@@ -391,45 +395,45 @@ impl Cpu {
      * > note that reset() must be called first to set the start address !
      */
     pub fn run(&mut self, cycles: usize) -> Result<(), CpuError> {
-        loop {
+        'interpreter: loop {
             // fetch an instruction
             let b = self.fetch()?;
-
-            // decode
-            let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing) =
-                opcodes::OPCODE_MATRIX[b as usize];
-
-            // print registers before
-            self.debug_out_registers();
-
-            // execute
-            let (instr_size, elapsed) =
-                opcode_f(self, opcode_cycles, add_extra_cycle_on_page_crossing).unwrap_or_else(
-                    |e| {
-                        // error !
-                        // TODO: handle with debugger if attached
-                        debug!("{}", e);
-                        panic!();
-                    },
-                );
 
             // handles debugger if any
             let debugger_res = self.handle_debugger_input_stdin()?;
             match debugger_res {
-                's' => {
+                'p' => {
+                    // decode
+                    let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing) =
+                        opcodes::OPCODE_MATRIX[b as usize];
+
+                    // execute
+                    let (instr_size, elapsed) =
+                        opcode_f(self, opcode_cycles, add_extra_cycle_on_page_crossing, false)
+                            .unwrap_or_else(|e| {
+                                // error !
+                                // TODO: handle with debugger if attached
+                                debug!("{}", e);
+                                panic!();
+                            });
+
                     // step(default), advance pc and increment the elapsed cycles
-                    self.regs.pc += instr_size as u16;
-                    self.cycles += elapsed;
+                    self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
+                    self.cycles = self.cycles.wrapping_add(elapsed);
+                    if self.debug_show_registers_after_step {
+                        self.debug_out_registers();
+                    }
+
+                    if cycles != 0 && elapsed >= cycles {
+                        break 'interpreter;
+                    }
                 }
                 'q' => {
                     // gracefully exit
-                    break;
+                    break 'interpreter;
                 }
+                '*' => {}
                 _ => {}
-            }
-
-            if cycles != 0 && elapsed >= cycles {
-                break;
             }
         }
         Ok(())
