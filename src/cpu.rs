@@ -134,7 +134,7 @@ impl Display for Registers {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(
             f,
-            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, P: {:08b}({}), S: ${:02x}",
+            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, P: {:02x}({}), S: ${:02x}",
             self.pc,
             self.a,
             self.x,
@@ -408,15 +408,23 @@ impl Cpu {
                         opcodes::OPCODE_MATRIX[b as usize];
 
                     // execute
-                    let (instr_size, elapsed) =
-                        opcode_f(self, opcode_cycles, add_extra_cycle_on_page_crossing, false)
-                            .unwrap_or_else(|e| {
-                                // error !
-                                // TODO: handle with debugger if attached
-                                debug!("{}", e);
-                                panic!();
-                            });
-
+                    let instr_size: i8;
+                    let elapsed: usize;
+                    let _ = match opcode_f(
+                        self,
+                        opcode_cycles,
+                        add_extra_cycle_on_page_crossing,
+                        false,
+                    ) {
+                        Ok((a, b)) => {
+                            instr_size = a;
+                            elapsed = b;
+                        }
+                        Err(e) => {
+                            // TODO: handle with debugger if attached
+                            panic!(e);
+                        }
+                    };
                     // step(default), advance pc and increment the elapsed cycles
                     self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
                     self.cycles = self.cycles.wrapping_add(elapsed);

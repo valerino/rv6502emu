@@ -41,6 +41,24 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug binary 'debugger_test'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=debugger_test",
+                    "--package=rv6502emu"
+                ],
+                "filter": {
+                    "name": "debugger_test",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
         }
     ]
 }
