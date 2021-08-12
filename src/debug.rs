@@ -35,11 +35,11 @@ use crate::cpu::Cpu;
 use crate::memory::Memory;
 use hexplay::HexViewBuilder;
 use log::*;
+use num;
 use std::error::Error;
 use std::fmt::Display;
 use std::io::{self, BufRead, Write};
 use std::str::SplitWhitespace;
-use std::u16;
 
 impl Cpu {
     /**
@@ -107,14 +107,15 @@ impl Cpu {
     fn dbg_cmd_show_help(&self) {
         self.debug_out_text(&"debugger supported commands: ");
         self.debug_out_text(
-            &"\td <# instr> [$address] .... disassemble <# instructions> bytes at <$address>.",
+            &"\td <# instr> [$address] .... disassemble <# instructions> bytes at [$address], defaults to pc.",
         );
+        self.debug_out_text(&"\te <$value> <$address> ..... write <$value> at <$address>.");
         self.debug_out_text(&"\th ......................... this help.");
         self.debug_out_text(&"\tr ......................... show registers.");
         self.debug_out_text(&"\tp ......................... step (execute next instruction).");
         self.debug_out_text(&"\tt [$address] .............. reset (restart from given [$address], or defaults to reset vector).");
         self.debug_out_text(&"\tq ......................... exit emulator.");
-        self.debug_out_text(&"\tv <a|x|y|s|p|pc> <$value>.. set register value.");
+        self.debug_out_text(&"\tv <a|x|y|s|p|pc> <$value>.. set register value, according to bitness (pc=16bit, others=8bit).");
         self.debug_out_text(&"\tx <len> <$address> ........ dump <len> bytes at <$address>.");
     }
 
@@ -161,11 +162,18 @@ impl Cpu {
         // get the start address
         if addr_s.len() > 0 {
             if addr_s.chars().next().unwrap_or_default() != '$' {
-                // invalid command, addressi invalid
+                // invalid command, address invalid
                 self.dbg_cmd_invalid();
                 return;
             }
-            addr = u16::from_str_radix(&addr_s[1..], 16).unwrap_or_default();
+            match u16::from_str_radix(&addr_s[1..], 16) {
+                Err(_) => {
+                    // invalid command, address invalid
+                    self.dbg_cmd_invalid();
+                    return;
+                }
+                Ok(a) => addr = a,
+            }
         } else {
             // defaults to pc
             addr = self.regs.pc;
@@ -180,10 +188,14 @@ impl Cpu {
         ));
         loop {
             // fetch an instruction
-            let b = self.fetch().unwrap_or_else(|e| {
-                self.debug_out_text(&e);
-                0
-            });
+            let b: u8;
+            match self.fetch() {
+                Err(e) => {
+                    self.debug_out_text(&e);
+                    return;
+                }
+                Ok(ok) => b = ok,
+            }
 
             // decode
             let (opcode_f, _, _) = opcodes::OPCODE_MATRIX[b as usize];
@@ -203,18 +215,70 @@ impl Cpu {
     }
 
     /**
+     * write byte value at the given address.
+     */
+    fn dbg_write_value(&mut self, mut it: SplitWhitespace<'_>) {
+        // check input
+        let val = it.next().unwrap_or_default();
+        let addr_s = it.next().unwrap_or_default();
+        if val.len() == 0 || addr_s.len() == 0 {
+            // invalid command
+            self.dbg_cmd_invalid();
+            return;
+        }
+        if addr_s.chars().next().unwrap_or_default() != '$'
+            || val.chars().next().unwrap_or_default() != '$'
+        {
+            // invalid command, address or value invalid
+            self.dbg_cmd_invalid();
+            return;
+        }
+
+        // parse address and value
+        let addr: u16;
+        let b: u8;
+        let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+            Err(_) => {
+                // invalid command, address invalid
+                self.dbg_cmd_invalid();
+                return;
+            }
+            Ok(a) => addr = a,
+        };
+        let _ = match u8::from_str_radix(&val[1..], 16) {
+            Err(_) => {
+                // invalid command, address invalid
+                self.dbg_cmd_invalid();
+                return;
+            }
+            Ok(a) => b = a,
+        };
+
+        // write
+        let _ = match self.bus.get_memory().write_byte(addr as usize, b) {
+            Err(e) => {
+                self.debug_out_text(&e);
+                return;
+            }
+            Ok(a) => {
+                self.debug_out_text(&format!("written {} at {}.", val, addr_s));
+            }
+        };
+    }
+
+    /**
      * hexdump n bytes at the given address
      */
     fn dbg_dump(&mut self, mut it: SplitWhitespace<'_>) {
         // check input
-        let len_s = it.next().unwrap();
+        let len_s = it.next().unwrap_or_default();
         let mut num_bytes = u16::from_str_radix(&len_s, 10).unwrap_or_default();
-        let addr_s = it.next().unwrap_or_default();
         if num_bytes == 0 {
             // invalid command, missing number of bytes to dump
             self.dbg_cmd_invalid();
             return;
         }
+        let addr_s = it.next().unwrap_or_default();
         let addr: u16;
 
         // get the start address
@@ -281,88 +345,41 @@ impl Cpu {
 
         // match registers and assign value
         let c = reg.chars().next().unwrap_or_default();
+        let res_u16 = u16::from_str_radix(&val[1..], 16);
         match c {
-            'a' => {
-                let _ = match u8::from_str_radix(&val[1..], 16) {
-                    Err(_) => {
-                        // invalid command, value invalid
-                        self.dbg_cmd_invalid();
-                        return;
-                    }
-                    Ok(a) => {
-                        self.debug_out_text(&format!("setting register 'a' to ${:02x}", a));
-                        self.regs.a = a;
-                    }
-                };
-            }
-            'x' => {
-                let _ = match u8::from_str_radix(&val[1..], 16) {
-                    Err(_) => {
-                        // invalid command, value invalid
-                        self.dbg_cmd_invalid();
-                        return;
-                    }
-                    Ok(x) => {
-                        self.debug_out_text(&format!("setting register 'x' to ${:02x}", x));
-                        self.regs.x = x;
-                    }
-                };
-            }
-            'y' => {
-                let _ = match u8::from_str_radix(&val[1..], 16) {
-                    Err(_) => {
-                        // invalid command, value invalid
-                        self.dbg_cmd_invalid();
-                        return;
-                    }
-                    Ok(y) => {
-                        self.debug_out_text(&format!("setting register 'y' to ${:02x}", y));
-                        self.regs.y = y;
-                    }
-                };
-            }
-            's' => {
-                let _ = match u8::from_str_radix(&val[1..], 16) {
-                    Err(_) => {
-                        // invalid command, value invalid
-                        self.dbg_cmd_invalid();
-                        return;
-                    }
-                    Ok(s) => {
-                        self.debug_out_text(&format!("setting register 's' to ${:02x}", s));
-                        self.regs.s = s;
-                    }
-                };
-            }
-            'p' => {
-                if Some(reg.chars().nth(1).unwrap_or_default()).unwrap_or_default() == 'c' {
-                    let _ = match u16::from_str_radix(&val[1..], 16) {
-                        Err(_) => {
-                            // invalid command, value invalid
-                            self.dbg_cmd_invalid();
-                            return;
-                        }
-                        Ok(pc) => {
-                            self.debug_out_text(&format!("setting register 'pc' to ${:02x}", pc));
-                            self.regs.pc = pc;
-                        }
-                    };
-                } else {
-                    let _ = match u8::from_str_radix(&val[1..], 16) {
-                        Err(_) => {
-                            // invalid command, value invalid
-                            self.dbg_cmd_invalid();
-                            return;
-                        }
-                        Ok(p) => {
-                            self.debug_out_text(&format!("setting register 'p' to ${:02x}", p));
-                            self.regs.p = p;
-                        }
-                    };
+            'a' | 'x' | 'y' | 's' | 'p' => match res_u16 {
+                Err(_) => {
+                    // invalid value
+                    self.dbg_cmd_invalid();
+                    return;
                 }
+                Ok(a) => {
+                    if reg.eq("pc") {
+                        self.regs.pc = a;
+                    } else {
+                        if a > 0xff {
+                            // invalid value
+                            self.dbg_cmd_invalid();
+                            return;
+                        }
+                        match c {
+                            'a' => self.regs.a = a as u8,
+                            'x' => self.regs.x = a as u8,
+                            'y' => self.regs.y = a as u8,
+                            's' => self.regs.s = a as u8,
+                            'p' => self.regs.p = a as u8,
+                            _ => (),
+                        }
+                    }
+                }
+            },
+            _ => {
+                // invalid command, register name invalid
+                self.dbg_cmd_invalid();
+                return;
             }
-            _ => self.dbg_cmd_invalid(),
         }
+        self.debug_out_text(&format!("register '{}' set to {}.", reg, val));
     }
 
     /**
@@ -394,6 +411,10 @@ impl Cpu {
                 // help
                 "d" => {
                     self.dbg_disassemble(it);
+                    return Ok('*');
+                }
+                "e" => {
+                    self.dbg_write_value(it);
                     return Ok('*');
                 }
                 // help

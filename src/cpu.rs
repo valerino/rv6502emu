@@ -134,14 +134,14 @@ impl Display for Registers {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(
             f,
-            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, P: {:02x}({}), S: ${:02x}",
+            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, S: ${:02x}, P: {:02x}({})",
             self.pc,
             self.a,
             self.x,
             self.y,
+            self.s,
             self.p,
             self.flags_to_string(),
-            self.s
         )
         .expect("");
 
@@ -376,7 +376,6 @@ impl Cpu {
             pc: addr,
         };
 
-        //self.debug_out_text("RESET!");
         Ok(())
     }
 
