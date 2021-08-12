@@ -421,7 +421,7 @@ impl Cpu {
                         }
                         Err(e) => {
                             // TODO: handle with debugger if attached
-                            panic!(e);
+                            panic!("{}", e);
                         }
                     };
                     // step(default), advance pc and increment the elapsed cycles

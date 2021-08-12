@@ -107,16 +107,20 @@ impl Cpu {
     fn dbg_cmd_show_help(&self) {
         self.debug_out_text(&"debugger supported commands: ");
         self.debug_out_text(
-            &"\td <# instr> [$address] .... disassemble <# instructions> bytes at [$address], defaults to pc.",
+                            &"\td <# instr> [$address] ................ disassemble <# instructions> bytes at [$address], defaults to pc.",
         );
-        self.debug_out_text(&"\te <$value> <$address> ..... write <$value> at <$address>.");
-        self.debug_out_text(&"\th ......................... this help.");
-        self.debug_out_text(&"\tr ......................... show registers.");
-        self.debug_out_text(&"\tp ......................... step (execute next instruction).");
-        self.debug_out_text(&"\tt [$address] .............. reset (restart from given [$address], or defaults to reset vector).");
-        self.debug_out_text(&"\tq ......................... exit emulator.");
-        self.debug_out_text(&"\tv <a|x|y|s|p|pc> <$value>.. set register value, according to bitness (pc=16bit, others=8bit).");
-        self.debug_out_text(&"\tx <len> <$address> ........ dump <len> bytes at <$address>.");
+        self.debug_out_text(&"\te <$value> [$value...] <$address> ..... write one or more <$value> starting at <$address>.");
+        self.debug_out_text(&"\th ..................................... this help.");
+        self.debug_out_text(&"\tr ..................................... show registers.");
+        self.debug_out_text(
+            &"\tp ..................................... step (execute next instruction).",
+        );
+        self.debug_out_text(&"\tt [$address] .......................... reset (restart from given [$address], or defaults to reset vector).");
+        self.debug_out_text(&"\tq ..................................... exit emulator.");
+        self.debug_out_text(&"\tv <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).");
+        self.debug_out_text(
+            &"\tx <len> <$address> .................... dump <len> bytes at <$address>.",
+        );
     }
 
     /**
@@ -183,7 +187,7 @@ impl Cpu {
         self.regs.pc = addr;
         let mut instr_count = 0;
         self.debug_out_text(&format!(
-            "disassembling {} instructions at ${:04x} (may overlap)\n",
+            "disassembling {} instructions at ${:04x} (may overlap).\n",
             n, addr
         ));
         loop {
@@ -199,7 +203,14 @@ impl Cpu {
 
             // decode
             let (opcode_f, _, _) = opcodes::OPCODE_MATRIX[b as usize];
-            let (instr_size, _) = opcode_f(self, 0, false, true).unwrap();
+            let instr_size: i8;
+            match opcode_f(self, 0, false, true) {
+                Err(e) => {
+                    self.debug_out_text(&e);
+                    return;
+                }
+                Ok((a, _)) => instr_size = a,
+            }
 
             instr_count += 1;
             if instr_count == n {
@@ -215,28 +226,29 @@ impl Cpu {
     }
 
     /**
-     * write byte value at the given address.
+     * write byte value/s at the given address.
      */
     fn dbg_write_value(&mut self, mut it: SplitWhitespace<'_>) {
-        // check input
-        let val = it.next().unwrap_or_default();
-        let addr_s = it.next().unwrap_or_default();
-        if val.len() == 0 || addr_s.len() == 0 {
+        // turn to collection
+        let col: Vec<&str> = it.collect();
+        let l = col.len();
+        if l < 2 {
             // invalid command
             self.dbg_cmd_invalid();
             return;
         }
-        if addr_s.chars().next().unwrap_or_default() != '$'
-            || val.chars().next().unwrap_or_default() != '$'
-        {
-            // invalid command, address or value invalid
-            self.dbg_cmd_invalid();
-            return;
-        }
 
-        // parse address and value
-        let addr: u16;
-        let b: u8;
+        // all items must start with $
+        for item in col.iter() {
+            if item.chars().next().unwrap_or_default() != '$' {
+                // invalid item
+                self.dbg_cmd_invalid();
+                return;
+            }
+        }
+        // last item is the address
+        let addr_s = col[l - 1];
+        let mut addr: u16;
         let _ = match u16::from_str_radix(&addr_s[1..], 16) {
             Err(_) => {
                 // invalid command, address invalid
@@ -245,25 +257,40 @@ impl Cpu {
             }
             Ok(a) => addr = a,
         };
-        let _ = match u8::from_str_radix(&val[1..], 16) {
-            Err(_) => {
-                // invalid command, address invalid
-                self.dbg_cmd_invalid();
-                return;
-            }
-            Ok(a) => b = a,
-        };
 
-        // write
-        let _ = match self.bus.get_memory().write_byte(addr as usize, b) {
-            Err(e) => {
-                self.debug_out_text(&e);
-                return;
+        // write all items starting at address (may overlap)
+        self.debug_out_text(&format!(
+            "writing {} bytes starting at {} (may overlap).\n",
+            l - 1,
+            addr_s
+        ));
+        for (i, item) in col.iter().enumerate() {
+            if i == (l - 1) {
+                break;
             }
-            Ok(a) => {
-                self.debug_out_text(&format!("written {} at {}.", val, addr_s));
-            }
-        };
+
+            let b: u8;
+            let _ = match u8::from_str_radix(&item[1..], 16) {
+                Err(_) => {
+                    // invalid command, value invalid
+                    self.dbg_cmd_invalid();
+                    return;
+                }
+                Ok(a) => b = a,
+            };
+            let _ = match self.bus.get_memory().write_byte(addr as usize, b) {
+                Err(e) => {
+                    self.debug_out_text(&e);
+                    return;
+                }
+                Ok(_) => {
+                    self.debug_out_text(&format!("written {} at ${:04x}.", item, addr));
+                }
+            };
+
+            // next address
+            addr = addr.wrapping_add(1);
+        }
     }
 
     /**
@@ -307,21 +334,18 @@ impl Cpu {
         let mut overlap = false;
         if addr_end < addr {
             // address wrapped, use max memory size as the end
+            let n_bytes_original = num_bytes;
             num_bytes = (mem.get_size() as u16).wrapping_sub(addr);
             addr_end = addr.wrapping_add(num_bytes).wrapping_sub(1);
-            overlap = true;
+            println!("warning: requested {} bytes, dumping {} bytes only due to overlapping with maximum memory size=${:04x}", n_bytes_original, num_bytes, mem.get_size() - 1);
         }
-        println!("{:04x} {:04x}", addr, addr_end);
         let m_slice = &mem.as_vec()[addr as usize..=addr_end as usize];
 
         // dump!
         // MAYBE_FIX: if not using a copy, borrow checker complains of mutable reference to *self used twice (due to self.bus.get_memory())
         let mut sl = vec![0; m_slice.len()];
         sl.copy_from_slice(&m_slice);
-        self.debug_out_text(&format!(
-            "dumping {} bytes at ${:04x}, overlap={}\n",
-            num_bytes, addr, overlap
-        ));
+        self.debug_out_text(&format!("dumping {} bytes at ${:04x}\n", num_bytes, addr));
         let dump = HexViewBuilder::new(&sl)
             .address_offset(addr as usize)
             .row_width(16)

@@ -474,7 +474,7 @@ impl AddressingMode for RelativeAddressing {
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{}${:02x}",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}",
             _c.regs.pc,
             b1,
             b2,
