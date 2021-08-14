@@ -32,10 +32,30 @@ use crate::cpu::cpu_error::CpuError;
 use crate::cpu::{Cpu, CpuOperation};
 
 /**
+ * this is used by the assembler part to tag elements in the opcode matrix
+ */
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub(crate) enum AddressingModeId {
+    Acc,
+    Abs,
+    Abx,
+    Aby,
+    Imm,
+    Imp,
+    Ind,
+    Xin,
+    Iny,
+    Rel,
+    Zpg,
+    Zpx,
+    Zpy,
+}
+
+/**
  * http://www.emulator101.com/6502-addressing-modes.html
  * https://www.masswerk.at/6502/6502_instruction_set.html
  */
-pub trait AddressingMode {
+pub(crate) trait AddressingMode {
     /**
      * the instruction size
      */
@@ -115,12 +135,12 @@ fn get_relative_branch_target(src_pc: u16, branch_offset: u16) -> (u16, bool) {
 /**
  * These instructions have register A (the accumulator) as the target. Examples are LSR A and ROL A.
  */
-pub struct AccumulatorAddressing;
+pub(crate) struct AccumulatorAddressing;
 impl AddressingMode for AccumulatorAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = _c.bus.get_memory().read_byte(_c.regs.pc as usize)?;
         Ok(format!(
-            "${:04x}:\t{:x}\t\t-->\t{} A",
+            "${:04x}:\t{:02x}\t\t-->\t{} A",
             _c.regs.pc,
             b,
             opcode_name.to_uppercase()
@@ -148,7 +168,7 @@ impl AddressingMode for AccumulatorAddressing {
  * Absolute addressing specifies the memory location explicitly in the two bytes following the opcode. So JMP $4032 will set the PC to $4032.
  * The hex for this is 4C 32 40. The 6502 is a little endian machine, so any 16 bit (2 byte) value is stored with the LSB first. All instructions that use absolute addressing are 3 bytes.
  */
-pub struct AbsoluteAddressing;
+pub(crate) struct AbsoluteAddressing;
 impl AddressingMode for AbsoluteAddressing {
     fn len() -> i8 {
         3
@@ -187,7 +207,7 @@ impl AddressingMode for AbsoluteAddressing {
  * This addressing mode makes the target address by adding the contents of the X or Y register to an absolute address.
  * For example, this 6502 code can be used to fill 10 bytes with $FF starting at address $1009, counting down to address $1000.
  */
-pub struct AbsoluteXAddressing;
+pub(crate) struct AbsoluteXAddressing;
 impl AddressingMode for AbsoluteXAddressing {
     fn len() -> i8 {
         3
@@ -232,7 +252,7 @@ impl AddressingMode for AbsoluteXAddressing {
  * This addressing mode makes the target address by adding the contents of the X or Y register to an absolute address.
  * For example, this 6502 code can be used to fill 10 bytes with $FF starting at address $1009, counting down to address $1000.
  */
-pub struct AbsoluteYAddressing;
+pub(crate) struct AbsoluteYAddressing;
 impl AddressingMode for AbsoluteYAddressing {
     fn len() -> i8 {
         3
@@ -276,7 +296,7 @@ impl AddressingMode for AbsoluteYAddressing {
 /**
  * These instructions have their data defined as the next byte after the opcode. ORA #$B2 will perform a logical (also called bitwise) of the value B2 with the accumulator.
  */
-pub struct ImmediateAddressing;
+pub(crate) struct ImmediateAddressing;
 impl AddressingMode for ImmediateAddressing {
     fn len() -> i8 {
         2
@@ -308,7 +328,7 @@ impl AddressingMode for ImmediateAddressing {
 /**
  * In an implied instruction, there's no operand (implied in the instruction itself).
  */
-pub struct ImpliedAddressing;
+pub(crate) struct ImpliedAddressing;
 impl AddressingMode for ImpliedAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = _c.bus.get_memory().read_byte(_c.regs.pc as usize)?;
@@ -325,7 +345,7 @@ impl AddressingMode for ImpliedAddressing {
  * The JMP instruction is the only instruction that uses this addressing mode. It is a 3 byte instruction - the 2nd and 3rd bytes are an absolute address.
  * The set the PC to the address stored at that address. So maybe this would be clearer.
  */
-pub struct IndirectAddressing;
+pub(crate) struct IndirectAddressing;
 impl AddressingMode for IndirectAddressing {
     fn len() -> i8 {
         3
@@ -372,7 +392,7 @@ impl AddressingMode for IndirectAddressing {
  * If X + the immediate byte will wrap around to a zero-page address. So you could code that like targetAddress = (X + opcode[1]) & 0xFF .
  * Indexed Indirect instructions are 2 bytes - the second byte is the zero-page address - $20 in the example. Obviously the fetched address has to be stored in the zero page.
  */
-pub struct XIndirectAddressing;
+pub(crate) struct XIndirectAddressing;
 impl AddressingMode for XIndirectAddressing {
     fn len() -> i8 {
         2
@@ -418,7 +438,7 @@ impl AddressingMode for XIndirectAddressing {
  *
  * While indexed indirect addressing will only generate a zero-page address, this mode's target address is not wrapped - it can be anywhere in the 16-bit address space.
  */
-pub struct IndirectYAddressing;
+pub(crate) struct IndirectYAddressing;
 impl AddressingMode for IndirectYAddressing {
     fn len() -> i8 {
         2
@@ -463,7 +483,7 @@ impl AddressingMode for IndirectYAddressing {
  * If the branch is taken, the new address will the the current PC plus the offset.
  * The offset is a signed byte, so it can jump a maximum of 127 bytes forward, or 128 bytes backward.
  */
-pub struct RelativeAddressing;
+pub(crate) struct RelativeAddressing;
 impl AddressingMode for RelativeAddressing {
     fn len() -> i8 {
         2
@@ -502,7 +522,7 @@ impl AddressingMode for RelativeAddressing {
  * The advantage of zero-page are two - the instruction takes one less byte to specify, and it executes in less CPU cycles.
  * Most programs are written to store the most frequently used variables in the first 256 memory locations so they can take advantage of zero page addressing.
  */
-pub struct ZeroPageAddressing;
+pub(crate) struct ZeroPageAddressing;
 impl AddressingMode for ZeroPageAddressing {
     fn len() -> i8 {
         2
@@ -538,7 +558,7 @@ impl AddressingMode for ZeroPageAddressing {
  * The target address will wrap around and will always be in the zero page. If the instruction is LDA $C0,X, and X is $60, then the target address will be $20.
  * $C0+$60 = $120, but the carry is discarded in the calculation of the target address.
  */
-pub struct ZeroPageXAddressing;
+pub(crate) struct ZeroPageXAddressing;
 impl AddressingMode for ZeroPageXAddressing {
     fn len() -> i8 {
         2
@@ -576,7 +596,7 @@ impl AddressingMode for ZeroPageXAddressing {
  * The target address will wrap around and will always be in the zero page. If the instruction is LDA $C0,X, and X is $60, then the target address will be $20.
  * $C0+$60 = $120, but the carry is discarded in the calculation of the target address.
  */
-pub struct ZeroPageYAddressing;
+pub(crate) struct ZeroPageYAddressing;
 impl AddressingMode for ZeroPageYAddressing {
     fn len() -> i8 {
         2

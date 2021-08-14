@@ -403,7 +403,7 @@ impl Cpu {
             match debugger_res {
                 'p' => {
                     // decode
-                    let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing) =
+                    let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing, _) =
                         opcodes::OPCODE_MATRIX[b as usize];
 
                     // execute

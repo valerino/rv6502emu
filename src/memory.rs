@@ -51,6 +51,11 @@ pub trait Memory {
     fn read_word_le(&mut self, address: usize) -> Result<u16, CpuError>;
 
     /**
+     * writes a word (little-endian) at address.
+     */
+    fn write_word_le(&mut self, address: usize, w: u16) -> Result<(), CpuError>;
+
+    /**
      * writes a byte at address.
      */
     fn write_byte(&mut self, address: usize, b: u8) -> Result<(), CpuError>;
@@ -96,6 +101,13 @@ impl Memory for DefaultMemory {
 
         self.cur.set_position(address as u64);
         let res = self.cur.read_u16::<LittleEndian>()?;
+        Ok(res)
+    }
+
+    fn write_word_le(&mut self, address: usize, w: u16) -> Result<(), CpuError> {
+        cpu_error::check_address(self, address, 2, CpuErrorType::MemoryWrite)?;
+        self.cur.set_position(address as u64);
+        let res = self.cur.write_u16::<LittleEndian>(w)?;
         Ok(res)
     }
 

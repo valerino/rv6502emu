@@ -28,6 +28,8 @@
  * SOFTWARE.
  */
 
+use crate::cpu::addressing_modes::AddressingModeId::*;
+use crate::cpu::addressing_modes::RelativeAddressing;
 use crate::cpu::addressing_modes::*;
 use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuError;
@@ -35,6 +37,11 @@ use crate::cpu::Cpu;
 use crate::utils;
 use ::function_name::named;
 use lazy_static::*;
+
+pub(crate) struct OpcodeMarker {
+    pub(crate) name: &'static str,
+    pub(crate) id: AddressingModeId,
+}
 
 lazy_static! {
     /**
@@ -49,103 +56,103 @@ lazy_static! {
      * (< fn(c: &mut Cpu, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, in_cycles: usize, add_extra_cycle:bool) >)
      *
      */
-    pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool) -> Result<(i8, usize), CpuError>, usize, bool)> =
+    pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
         vec![
             // 0x0 - 0xf
-            (brk::<ImpliedAddressing>, 7, false), (ora::<XIndirectAddressing>, 6, false), (kil::<ImpliedAddressing>, 0, false), (slo::<XIndirectAddressing>, 8, false),
-            (nop::<ZeroPageAddressing>, 3, false), (ora::<ZeroPageAddressing>, 3, false), (asl::<ZeroPageAddressing>, 5, false), (slo::<ZeroPageAddressing>, 5, false),
-            (php::<ImpliedAddressing>, 3, false), (ora::<ImmediateAddressing>, 2, false), (asl::<AccumulatorAddressing>, 2, false), (anc::<ImmediateAddressing>, 2, false),
-            (nop::<AbsoluteAddressing>, 4, false), (ora::<AbsoluteAddressing>, 4, false), (asl::<AbsoluteAddressing>, 6, false), (slo::<AbsoluteAddressing>, 6, false),
+            (brk::<ImpliedAddressing>, 7, false, OpcodeMarker{ name: "brk", id: Imp}), (ora::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "ora", id: Xin}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (slo::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "slo", id: Xin}),
+            (nop::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "nop", id: Zpg}), (ora::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ora", id: Zpg}), (asl::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "asl", id: Zpg}), (slo::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "slo", id: Zpg}),
+            (php::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "php", id: Imp}), (ora::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ora", id: Imm}), (asl::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "asl", id: Acc}), (anc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "anc", id: Imm}),
+            (nop::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Abs}), (ora::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ora", id: Abs}), (asl::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "asl", id: Abs}), (slo::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "slo", id: Abs}),
 
             // 0x10 - 0x1f
-            (bpl::<RelativeAddressing>, 2, true), (ora::<IndirectYAddressing>, 5, true), (kil::<ImpliedAddressing>, 0, false), (slo::<IndirectYAddressing>, 8, false),
-            (nop::<ZeroPageXAddressing>, 4, false), (ora::<ZeroPageXAddressing>, 4, false), (asl::<ZeroPageXAddressing>, 6, false), (slo::<ZeroPageXAddressing>, 6, false),
-            (clc::<ImpliedAddressing>, 2, false), (ora::<AbsoluteYAddressing>, 4, true), (nop::<ImpliedAddressing>, 2, false), (slo::<AbsoluteYAddressing>, 7, false),
-            (nop::<AbsoluteXAddressing>, 4, true), (ora::<AbsoluteXAddressing>, 4, true), (asl::<AbsoluteXAddressing>, 7, false), (slo::<AbsoluteXAddressing>, 7, false),
+            (bpl::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bpl", id: Rel}), (ora::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "ora", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (slo::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "slo", id: Iny}),
+            (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}), (ora::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "ora", id: Zpx}), (asl::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "asl", id: Zpx}), (slo::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "slo", id: Zpx}),
+            (clc::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "clc", id: Imp}), (ora::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "ora", id: Abx}), (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}), (slo::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "slo", id: Aby}),
+            (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}), (ora::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "ora", id: Abx}), (asl::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "asl", id: Abx}), (slo::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "slo", id: Abx}),
 
             // 0x20 - 0x2f
-            (jsr::<AbsoluteAddressing>, 6, false), (and::<XIndirectAddressing>, 6, false), (kil::<ImpliedAddressing>, 0, false), (rla::<XIndirectAddressing>, 8, false),
-            (bit::<ZeroPageAddressing>, 3, false), (and::<ZeroPageAddressing>, 3, false), (rol::<ZeroPageAddressing>, 5, false), (rla::<ZeroPageAddressing>, 5, false),
-            (plp::<ImpliedAddressing>, 4, false), (and::<ImmediateAddressing>, 2, false), (rol::<AccumulatorAddressing>, 2, false), (anc::<ImmediateAddressing>, 2, false),
-            (bit::<AbsoluteAddressing>, 4, false), (and::<AbsoluteAddressing>, 4, false), (rol::<AbsoluteAddressing>, 6, false), (rla::<AbsoluteAddressing>, 6, false),
+            (jsr::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "jsr", id: Abs}), (and::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "and", id: Abx}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (rla::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "rla", id: Xin}),
+            (bit::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "bit", id: Zpg}), (and::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "and", id: Zpg}), (rol::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rol", id: Zpg}), (rla::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rla", id: Zpg}),
+            (plp::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "plp", id: Imp}), (and::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "and", id: Imm}), (rol::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "rol", id: Acc}), (anc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "anc", id: Imm}),
+            (bit::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "bit", id: Abs}), (and::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "and", id: Abs}), (rol::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "rol", id: Abs}), (rla::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "rla", id: Abs}),
 
             // 0x30 - 0x3f
-            (bmi::<RelativeAddressing>, 2, true), (and::<IndirectYAddressing>, 5, true), (kil::<ImpliedAddressing>, 0, false), (rla::<IndirectYAddressing>, 8, false),
-            (nop::<ZeroPageXAddressing>, 4, false), (and::<ZeroPageXAddressing>, 4, false), (rol::<ZeroPageXAddressing>, 6, false), (rla::<ZeroPageXAddressing>, 6, false),
-            (sec::<ImpliedAddressing>, 2, false), (and::<AbsoluteYAddressing>, 4, true), (nop::<ImpliedAddressing>, 2, false), (rla::<AbsoluteYAddressing>, 7, false),
-            (nop::<AbsoluteXAddressing>, 4, true), (and::<AbsoluteXAddressing>, 4, true), (rol::<AbsoluteXAddressing>, 7, false), (rla::<AbsoluteXAddressing>, 7, false),
+            (bmi::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bmi", id: Rel}), (and::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "and", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (rla::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "rla", id: Iny}),
+            (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}), (and::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "and", id: Zpx}), (rol::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "rol", id: Zpx}), (rla::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "rla", id: Zpx}),
+            (sec::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sec", id: Imp}), (and::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "and", id: Aby}), (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}), (rla::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "rla", id: Aby}),
+            (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}), (and::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "and", id: Abx}), (rol::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "rol", id: Abx}), (rla::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "rla", id: Abx}),
 
             // 0x40 - 0x4f
-            (rti::<ImpliedAddressing>, 6, false), (eor::<XIndirectAddressing>, 6, false), (kil::<ImpliedAddressing>, 0, false), (sre::<XIndirectAddressing>, 8, false),
-            (nop::<ZeroPageAddressing>, 3, false), (eor::<ZeroPageAddressing>, 3, false), (lsr::<ZeroPageAddressing>, 5, false), (sre::<ZeroPageAddressing>, 5, false),
-            (pha::<ImpliedAddressing>, 3, false), (eor::<ImmediateAddressing>, 2, false), (lsr::<AccumulatorAddressing>, 2, false), (alr::<ImmediateAddressing>, 2, false),
-            (jmp::<AbsoluteAddressing>, 3, false), (eor::<AbsoluteAddressing>, 4, false), (lsr::<AbsoluteAddressing>, 6, false), (sre::<AbsoluteAddressing>, 6, false),
+            (rti::<ImpliedAddressing>, 6, false, OpcodeMarker{ name: "rti", id: Imp}), (eor::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "eor", id: Xin}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (sre::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "sre", id: Xin}),
+            (nop::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "nop", id: Zpg}), (eor::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "eor", id: Zpg}), (lsr::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "lsr", id: Zpg}), (sre::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "sre", id: Zpg}),
+            (pha::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "pha", id: Imp}), (eor::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "eor", id: Imm}), (lsr::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "lsr", id: Acc}), (alr::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "alr", id: Imm}),
+            (jmp::<AbsoluteAddressing>, 3, false, OpcodeMarker{ name: "jmp", id: Abs}), (eor::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "eor", id: Abs}), (lsr::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Abs}), (sre::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "sre", id: Abs}),
 
             // 0x50 - 0x5f
-            (bvc::<ImpliedAddressing>, 2, true), (eor::<IndirectYAddressing>, 5, true), (kil::<ImpliedAddressing>, 0, false), (sre::<IndirectYAddressing>, 8, false),
-            (nop::<ZeroPageXAddressing>, 4, false), (eor::<ZeroPageXAddressing>, 4, false), (lsr::<ZeroPageXAddressing>, 6, false), (sre::<ZeroPageXAddressing>, 6, false),
-            (cli::<ImpliedAddressing>, 2, false), (eor::<AbsoluteYAddressing>, 4, true), (nop::<ImpliedAddressing>, 2, false), (sre::<AbsoluteYAddressing>, 7, false),
-            (nop::<AbsoluteXAddressing>, 4, true), (eor::<AbsoluteXAddressing>, 4, true), (lsr::<AbsoluteXAddressing>, 7, false), (sre::<AbsoluteXAddressing>, 7, false),
+            (bvc::<ImpliedAddressing>, 2, true, OpcodeMarker{ name: "bvc", id: Imp}), (eor::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "eor", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (sre::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "sre", id: Iny}),
+            (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}), (eor::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "eor", id: Zpx}), (lsr::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Zpx}), (sre::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "sre", id: Zpx}),
+            (cli::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "cli", id: Imp}), (eor::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Aby}), (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}), (sre::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "sre", id: Aby}),
+            (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}), (eor::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Abx}), (lsr::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "lsr", id: Abx}), (sre::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "sre", id: Abx}),
 
             // 0x60 - 0x6f
-            (rts::<RelativeAddressing>, 6, false), (adc::<XIndirectAddressing>, 6, false), (kil::<ImpliedAddressing>, 0, false), (rra::<XIndirectAddressing>, 8, false),
-            (nop::<ZeroPageAddressing>, 3, false), (adc::<ZeroPageAddressing>, 3, false), (ror::<ZeroPageAddressing>, 5, false), (rra::<ZeroPageAddressing>, 5, false),
-            (pla::<ImpliedAddressing>, 4, false), (adc::<ImmediateAddressing>, 2, true), (ror::<AccumulatorAddressing>, 2, false), (arr::<ImmediateAddressing>, 2, false),
-            (jmp::<IndirectAddressing>, 5, false), (adc::<AbsoluteAddressing>, 4, false), (ror::<AbsoluteAddressing>, 6, false), (rra::<AbsoluteAddressing>, 6, false),
+            (rts::<RelativeAddressing>, 6, false, OpcodeMarker{ name: "rts", id: Rel}), (adc::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "adc", id: Xin}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (rra::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "rra", id: Xin}),
+            (nop::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "nop", id: Zpg}), (adc::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "adc", id: Zpg}), (ror::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "ror", id: Zpg}), (rra::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rra", id: Zpg}),
+            (pla::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "pla", id: Imp}), (adc::<ImmediateAddressing>, 2, true, OpcodeMarker{ name: "adc", id: Imm}), (ror::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "ror", id: Acc}), (arr::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "arr", id: Imm}),
+            (jmp::<IndirectAddressing>, 5, false, OpcodeMarker{ name: "jmp", id: Ind}), (adc::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "adc", id: Abs}), (ror::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "ror", id: Abs}), (rra::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "rra", id: Abs}),
 
             // 0x70 - 0x7f
-            (bvs::<RelativeAddressing>, 2, true), (adc::<IndirectYAddressing>, 5, true), (kil::<ImpliedAddressing>, 0, false), (rra::<IndirectYAddressing>, 8, false),
-            (nop::<ZeroPageXAddressing>, 4, false), (adc::<ZeroPageXAddressing>, 4, false), (ror::<ZeroPageXAddressing>, 6, false), (rra::<ZeroPageXAddressing>, 6, false),
-            (sei::<ImpliedAddressing>, 2, false), (adc::<AbsoluteYAddressing>, 4, true), (nop::<ImpliedAddressing>, 2, false), (rra::<AbsoluteYAddressing>, 7, false),
-            (nop::<AbsoluteXAddressing>, 4, true), (adc::<AbsoluteXAddressing>, 4, true), (ror::<AbsoluteXAddressing>, 7, false), (rra::<AbsoluteXAddressing>, 7, false),
+            (bvs::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bvs", id: Rel}), (adc::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "adc", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (rra::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "rra", id: Iny}),
+            (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}), (adc::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "adc", id: Zpx}), (ror::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "ror", id: Zpx}), (rra::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "rra", id: Zpx}),
+            (sei::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sei", id: Imp}), (adc::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "adc", id: Aby}), (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}), (rra::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "rra", id: Aby}),
+            (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}), (adc::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "adc", id: Abx}), (ror::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "ror", id: Abx}), (rra::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "rra", id: Abx}),
 
             // 0x80 - 0x8f
-            (nop::<ImmediateAddressing>, 2, false), (sta::<XIndirectAddressing>, 6, false), (nop::<ImmediateAddressing>, 2, false), (sax::<XIndirectAddressing>, 6, false),
-            (sty::<ZeroPageAddressing>, 3, false), (sta::<ZeroPageAddressing>, 3, false), (stx::<ZeroPageAddressing>, 3, false), (sax::<ZeroPageAddressing>, 3, false),
-            (dey::<ImpliedAddressing>, 2, false), (nop::<ImmediateAddressing>, 2, false), (txa::<ImpliedAddressing>, 2, false), (xaa::<ImmediateAddressing>, 2, false),
-            (sty::<AbsoluteAddressing>, 4, false), (sta::<AbsoluteAddressing>, 4, false), (stx::<AbsoluteAddressing>, 4, false), (sax::<AbsoluteAddressing>, 4, false),
+            (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}), (sta::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "sta", id: Xin}), (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}), (sax::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "sax", id: Xin}),
+            (sty::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sty", id: Zpg}), (sta::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sta", id: Zpg}), (stx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "stx", id: Zpg}), (sax::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sax", id: Zpg}),
+            (dey::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "dey", id: Imp}), (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}), (txa::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "txa", id: Imp}), (xaa::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "xaa", id: Imm}),
+            (sty::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sty", id: Abs}), (sta::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sta", id: Abs}), (stx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "stx", id: Abs}), (sax::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sax", id: Abs}),
 
             // 0x90 - 0x9f
-            (bcc::<RelativeAddressing>, 2, true), (sta::<IndirectYAddressing>, 6, false), (kil::<ImpliedAddressing>, 0, false), (ahx::<IndirectYAddressing>, 6, false),
-            (sty::<ZeroPageXAddressing>, 4, false), (sta::<ZeroPageXAddressing>, 4, false), (stx::<ZeroPageYAddressing>, 4, false), (sax::<ZeroPageYAddressing>, 4, false),
-            (tya::<ImpliedAddressing>, 2, false), (sta::<AbsoluteYAddressing>, 5, false), (txs::<ImpliedAddressing>, 2, false), (tas::<AbsoluteYAddressing>, 5, false),
-            (shy::<AbsoluteXAddressing>, 5, false), (sta::<AbsoluteXAddressing>, 5, false), (shx::<AbsoluteYAddressing>, 5, false), (ahx::<AbsoluteYAddressing>, 5, false),
+            (bcc::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bcc", id: Rel}), (sta::<IndirectYAddressing>, 6, false, OpcodeMarker{ name: "sta", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (ahx::<IndirectYAddressing>, 6, false, OpcodeMarker{ name: "ahx", id: Iny}),
+            (sty::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sty", id: Zpx}), (sta::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sta", id: Zpx}), (stx::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "stx", id: Zpy}), (sax::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "sax", id: Zpy}),
+            (tya::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tya", id: Imp}), (sta::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "sta", id: Aby}), (txs::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "txs", id: Imp}), (tas::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "tas", id: Aby}),
+            (shy::<AbsoluteXAddressing>, 5, false, OpcodeMarker{ name: "shy", id: Abx}), (sta::<AbsoluteXAddressing>, 5, false, OpcodeMarker{ name: "sta", id: Abx}), (shx::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "shx", id: Aby}), (ahx::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "ahx", id: Aby}),
 
             // 0xa0 - 0xaf
-            (ldy::<ImmediateAddressing>, 2, false), (lda::<XIndirectAddressing>, 6, false), (ldx::<ImmediateAddressing>, 2, false), (lax::<XIndirectAddressing>, 6, false),
-            (ldy::<ZeroPageAddressing>, 3, false), (lda::<ZeroPageAddressing>, 3, false), (ldx::<ZeroPageAddressing>, 3, false), (lax::<ZeroPageAddressing>, 3, false),
-            (tay::<ImpliedAddressing>, 2, false), (lda::<ImmediateAddressing>, 2, false), (tax::<ImpliedAddressing>, 2, false), (lax::<ImmediateAddressing>, 2, false),
-            (ldy::<AbsoluteAddressing>, 4, false), (lda::<AbsoluteAddressing>, 4, false), (ldx::<AbsoluteAddressing>, 4, false), (lax::<AbsoluteAddressing>, 4, false),
+            (ldy::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ldy", id: Imm}), (lda::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "lda", id: Xin}), (ldx::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ldx", id: Imm}), (lax::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "lax", id: Xin}),
+            (ldy::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ldy", id: Zpg}), (lda::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "lda", id: Zpg}), (ldx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ldx", id: Zpg}), (lax::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "lax", id: Zpg}),
+            (tay::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tay", id: Imp}), (lda::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "lda", id: Imm}), (tax::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tax", id: Imp}), (lax::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "lax", id: Imm}),
+            (ldy::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ldy", id: Abs}), (lda::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "lda", id: Abs}), (ldx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ldx", id: Abs}), (lax::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "lax", id: Abs}),
 
             // 0xb0 - 0xbf
-            (bcs::<RelativeAddressing>, 2, true), (lda::<IndirectYAddressing>, 5, true), (kil::<ImpliedAddressing>, 0, false), (lax::<IndirectYAddressing>, 5, true),
-            (ldy::<ZeroPageXAddressing>, 4, false), (lda::<ZeroPageXAddressing>, 4, false), (ldx::<ZeroPageYAddressing>, 4, false), (lax::<ZeroPageYAddressing>, 4, false),
-            (clv::<ImpliedAddressing>, 2, false), (lda::<AbsoluteYAddressing>, 4, true), (tsx::<ImpliedAddressing>, 2, false), (las::<AbsoluteYAddressing>, 4, true),
-            (ldy::<AbsoluteXAddressing>, 4, true), (lda::<AbsoluteXAddressing>, 4, true), (ldx::<AbsoluteYAddressing>, 4, true), (lax::<AbsoluteYAddressing>, 4, true),
+            (bcs::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bcs", id: Rel}), (lda::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "lda", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (lax::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "lax", id: Iny}),
+            (ldy::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "ldy", id: Zpx}), (lda::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "lda", id: Zpx}), (ldx::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "ldx", id: Zpy}), (lax::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "lax", id: Zpy}),
+            (clv::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "clv", id: Imp}), (lda::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "lda", id: Aby}), (tsx::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tsx", id: Imp}), (las::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "las", id: Aby}),
+            (ldy::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "ldy", id: Abx}), (lda::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "lda", id: Abx}), (ldx::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "ldx", id: Aby}), (lax::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "lax", id: Aby}),
 
             // 0xc0 - 0xcf
-            (cpy::<ImmediateAddressing>, 2, false), (cmp::<XIndirectAddressing>, 6, false), (nop::<ImmediateAddressing>, 2, false), (dcp::<XIndirectAddressing>, 8, false),
-            (cpy::<ZeroPageAddressing>, 3, false), (cmp::<ZeroPageAddressing>, 3, false), (dec::<ZeroPageAddressing>, 5, false), (dcp::<ZeroPageAddressing>, 5, false),
-            (iny::<ImpliedAddressing>, 2, false), (cmp::<ImmediateAddressing>, 2, false), (dex::<ImpliedAddressing>, 2, false), (axs::<ImmediateAddressing>, 2, false),
-            (cpy::<AbsoluteAddressing>, 4, false), (cmp::<AbsoluteAddressing>, 4, false), (dec::<AbsoluteAddressing>, 6, false), (dcp::<AbsoluteAddressing>, 6, false),
+            (cpy::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cpy", id: Imm}), (cmp::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "cmp", id: Xin}), (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}), (dcp::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "dcp", id: Xin}),
+            (cpy::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cpy", id: Zpg}), (cmp::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cmp", id: Zpg}), (dec::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "dec", id: Zpg}), (dcp::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "dcp", id: Zpg}),
+            (iny::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "iny", id: Imp}), (cmp::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cmp", id: Imm}), (dex::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "dex", id: Imp}), (axs::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "axs", id: Imm}),
+            (cpy::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cpy", id: Abs}), (cmp::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cmp", id: Abs}), (dec::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "dec", id: Abs}), (dcp::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "dcp", id: Abs}),
 
             // 0xd0 - 0xdf
-            (bne::<RelativeAddressing>, 2, true), (cmp::<IndirectYAddressing>, 5, true), (kil::<ImpliedAddressing>, 0, false), (dcp::<IndirectYAddressing>, 8, false),
-            (nop::<ZeroPageXAddressing>, 4, false), (cmp::<ZeroPageXAddressing>, 4, false), (dec::<ZeroPageXAddressing>, 6, false), (dcp::<ZeroPageXAddressing>, 6, false),
-            (cld::<ImpliedAddressing>, 2, false), (cmp::<AbsoluteYAddressing>, 4, true), (nop::<ImpliedAddressing>, 2, false), (dcp::<AbsoluteYAddressing>, 7, true),
-            (nop::<AbsoluteXAddressing>, 4, true), (cmp::<AbsoluteXAddressing>, 4, true), (dec::<AbsoluteXAddressing>, 7, false), (dcp::<AbsoluteXAddressing>, 7, false),
+            (bne::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bne", id: Rel}), (cmp::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "cmp", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (dcp::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "dcp", id: Iny}),
+            (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}), (cmp::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "cmp", id: Zpx}), (dec::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "dec", id: Zpx}), (dcp::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "dcp", id: Zpx}),
+            (cld::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "cld", id: Imp}), (cmp::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "cmp", id: Aby}), (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}), (dcp::<AbsoluteYAddressing>, 7, true, OpcodeMarker{ name: "dcp", id: Aby}),
+            (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}), (cmp::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "cmp", id: Abx}), (dec::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "dec", id: Abx}), (dcp::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "dcp", id: Abx}),
 
             // 0xe0 - 0xef
-            (cpx::<ImmediateAddressing>, 2, false), (sbc::<XIndirectAddressing>, 6, false), (nop::<ImmediateAddressing>, 2, false), (isc::<XIndirectAddressing>, 8, false),
-            (cpx::<ZeroPageAddressing>, 3, false), (sbc::<ZeroPageAddressing>, 3, false), (inc::<ZeroPageAddressing>, 5, false), (isc::<ZeroPageAddressing>, 5, false),
-            (inx::<ImpliedAddressing>, 2, false), (sbc::<ImmediateAddressing>, 2, false), (nop::<ImpliedAddressing>, 2, false), (sbc::<ImmediateAddressing>, 2, false),
-            (cpx::<AbsoluteAddressing>, 4, false), (sbc::<AbsoluteAddressing>, 4, false), (inc::<AbsoluteAddressing>, 6, false), (isc::<AbsoluteAddressing>, 6, false),
+            (cpx::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cpx", id: Imm}), (sbc::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "sbc", id: Xin}), (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}), (isc::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "isc", id: Xin}),
+            (cpx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cpx", id: Zpg}), (sbc::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sbc", id: Zpg}), (inc::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "inc", id: Zpg}), (isc::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "isc", id: Zpg}),
+            (inx::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "inx", id: Imp}), (sbc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "sbc", id: Imm}), (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}), (sbc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "sbc", id: Imm}),
+            (cpx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cpx", id: Abs}), (sbc::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sbc", id: Abs}), (inc::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "inc", id: Abs}), (isc::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "isc", id: Abs}),
 
             // 0xf0 - 0xff
-            (beq::<RelativeAddressing>, 2, true), (sbc::<IndirectYAddressing>, 5, true), (kil::<ImpliedAddressing>, 0, false), (isc::<IndirectYAddressing>, 8, false),
-            (nop::<ZeroPageXAddressing>, 4, false), (sbc::<ZeroPageXAddressing>, 4, false), (inc::<ZeroPageXAddressing>, 6, false), (isc::<ZeroPageXAddressing>, 6, false),
-            (sed::<ImpliedAddressing>, 2, false), (sbc::<AbsoluteYAddressing>, 4, true), (nop::<ImpliedAddressing>, 2, false), (isc::<AbsoluteYAddressing>, 7, false),
-            (nop::<AbsoluteXAddressing>, 4, true), (sbc::<AbsoluteXAddressing>, 4, true), (inc::<AbsoluteXAddressing>, 7, false), (isc::<AbsoluteXAddressing>, 7, false),
+            (beq::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "beq", id: Rel}), (sbc::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "sbc", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (isc::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "isc", id: Ind}),
+            (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}), (sbc::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sbc", id: Zpx}), (inc::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "inc", id: Zpx}), (isc::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "isc", id: Zpx}),
+            (sed::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sed", id: Imp}), (sbc::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "sbc", id: Aby}), (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}), (isc::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "isc", id: Aby}),
+            (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}), (sbc::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "sbc", id: Abx}), (inc::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "inc", id: Abx}), (isc::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "isc", id: Abx}),
             ];
 }
 
@@ -169,7 +176,6 @@ fn adc<A: AddressingMode>(
 
     // and read byte
     let b = A::load(c, tgt)?;
-
     // perform the addition (regs.a+b+C)
     let mut sum: u16;
     if c.is_decimal_set() {
