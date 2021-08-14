@@ -43,6 +43,24 @@ use std::fmt::Display;
 use std::io::{self, BufRead, Write};
 use std::str::SplitWhitespace;
 
+/**
+ * breakpoint type
+ */
+enum Breakpoint {
+    Exec,
+    Read,
+    Write,
+    ReadWrite,
+}
+
+/**
+ * breakpoint struct
+ */
+struct Bp {
+    address: usize,
+    t: Breakpoint,
+}
+
 impl Cpu {
     /**
      * enable debugger
