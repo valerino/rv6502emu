@@ -108,21 +108,28 @@ impl Cpu {
      */
     fn dbg_cmd_show_help(&self) {
         self.debug_out_text(&"debugger supported commands: ");
-        self.debug_out_text(&"\ta <$address> .......................... assemble instructions (one per line) at <$address>, x to finish.");
+        self.debug_out_text(&"\ta <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.");
         self.debug_out_text(
-                            &"\td <# instr> [$address] ................ disassemble <# instructions> bytes at [$address], defaults to pc.",
+            &"\tb <$address> .......................... add (execution) breakpoint at <$address>.",
         );
-        self.debug_out_text(&"\te <$value> [$value...] <$address> ..... write one or more <$value> in memory starting at <$address>.");
+        self.debug_out_text(&"\tbl ..........-......................... show breakpoints.");
+        self.debug_out_text(&"\ta <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.");
+        self.debug_out_text(
+                            &"\td <# instr> [$address] ................ disassemble <# instructions> at [$address], address defaults to pc.",
+        );
+        self.debug_out_text(&"\te <$value> [$value...] <$address> ..... write one or more <$value> bytes in memory starting at <$address>.");
+        self.debug_out_text(&"\tg ..................................... continue execution until breakpoint or trap.");
         self.debug_out_text(&"\th ..................................... this help.");
+        self.debug_out_text(&"\tq ..................................... exit emulator.");
         self.debug_out_text(&"\tr ..................................... show registers.");
+        self.debug_out_text(&"\trs .................................... enable/disable showing registers after each step, default is off.");
         self.debug_out_text(
             &"\tp ..................................... step (execute next instruction).",
         );
         self.debug_out_text(&"\tt [$address] .......................... reset (restart from given [$address], or defaults to reset vector).");
-        self.debug_out_text(&"\tq ..................................... exit emulator.");
         self.debug_out_text(&"\tv <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).");
         self.debug_out_text(
-            &"\tx <len> <$address> .................... dump <len> bytes at <$address>.",
+            &"\tx <len> <$address> .................... hexdump <len> bytes at <$address>.",
         );
     }
 
@@ -148,7 +155,6 @@ impl Cpu {
         self.debug_out_text(&"cpu reset, restarting at RESET vector.");
         self.reset(None).unwrap_or(());
     }
-
     /**
      * disassemble n instructions at the given address
      */
@@ -636,6 +642,9 @@ impl Cpu {
         self.debug_out_text(&"invalid command, try 'h' for help !");
     }
 
+    fn dbg_add_breakpoint(&mut self, mut it: SplitWhitespace<'_>) {}
+
+    fn dbg_show_breakpoints(&mut self) {}
     /**
      * handle debugger input from stdin, if debugger is active.
      *
@@ -643,6 +652,11 @@ impl Cpu {
      */
     pub(crate) fn handle_debugger_input_stdin(&mut self) -> Result<char, std::io::Error> {
         if self.debug {
+            if self.going {
+                // let it go!
+                return Ok('p');
+            }
+
             // read from stdin
             let mut full_string = String::new();
             print!("?:> ");
@@ -660,6 +674,14 @@ impl Cpu {
                     self.dbg_assemble(it);
                     return Ok('*');
                 }
+                "b" => {
+                    self.dbg_add_breakpoint(it);
+                    return Ok('*');
+                }
+                "bl" => {
+                    self.dbg_show_breakpoints();
+                    return Ok('*');
+                }
                 // help
                 "d" => {
                     self.dbg_disassemble(it);
@@ -669,6 +691,11 @@ impl Cpu {
                 "e" => {
                     self.dbg_write_value(it);
                     return Ok('*');
+                }
+                // go
+                "g" => {
+                    self.going = true;
+                    return Ok('p');
                 }
                 // help
                 "h" => {
@@ -683,6 +710,19 @@ impl Cpu {
                 // show registers
                 "r" => {
                     self.debug_out_registers();
+                    return Ok('*');
+                }
+                // set/unset show registers after step
+                "rs" => {
+                    self.debug_show_registers_after_step = !self.debug_show_registers_after_step;
+                    self.debug_out_text(&format!(
+                        "{}showing registers after each step.",
+                        if self.debug_show_registers_after_step {
+                            ""
+                        } else {
+                            "not "
+                        }
+                    ));
                     return Ok('*');
                 }
                 // step
@@ -709,7 +749,7 @@ impl Cpu {
             }
         }
 
-        // default returns 'no-op'
-        Ok('*')
+        // default returns step (uninterrupted execution)
+        Ok('p')
     }
 }

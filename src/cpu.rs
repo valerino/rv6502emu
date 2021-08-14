@@ -202,16 +202,19 @@ pub struct Cpu {
     /// current cpu cycles.
     pub cycles: usize,
 
-    // debugger enabled/disabled.
+    /// debugger enabled/disabled.
     pub debug: bool,
 
-    // set to show registers after step in the debugger, default is false (use the 'r' command).
-    debug_show_registers_after_step: bool,
+    /// set by the debugger with the 'g' (continue until break/trap) command.
+    pub(crate) going: bool,
+
+    /// set to show registers after step in the debugger, default is false (use the 'r' command).
+    pub(crate) debug_show_registers_after_step: bool,
 
     /// the bus.
     pub bus: Box<dyn Bus>,
 
-    // callback for the user (optional).
+    /// callback for the user (optional).
     pub cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
 }
 
@@ -324,6 +327,7 @@ impl Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
+            going: false,
             bus: b,
             debug: debug,
             debug_show_registers_after_step: false,

@@ -6,19 +6,80 @@ my toy MOS6502 cpu emulator implemented as a rust crate.
 said that, **please note that everything (except implementation errors, of course!) is intentional**: i'm trying to experiment with different features of Rust to get a better hold of it and improve my skills.<br><br>
 hopefully this will work too once finished, i plan to use it for a rust-based Atari2600 emulator :)
 
+## features
+
+- undocumented opcodes: ~100%
+- disassembler : 100%
+- assembler : 100%
+- emulator : 40%
+
 ## usage
 
-at the moment, the project is not finished yet.
+the api **is still wip** and currently support:
 
-- the instruction decoder seems working (implementing a debugger should be easy now).
-- the different addressing modes seems working and there's a bit of output.
-- i'm currently implementing the opcodes now....
+~~~
+    /**
+     * creates a new cpu instance, with the given Bus attached.
+     */
+    pub fn new(
+        b: Box<dyn Bus>,
+        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
+        debug: bool,
+    ) -> Cpu
 
-to get a hold, i'm implementing an [integration test](./tests/test.rs) using [klaus test](https://github.com/Klaus2m5/6502_65C02_functional_tests) to stress-test the implementation.
+    /**
+     * creates a new cpu instance, with the given Bus attached, exposing a Memory of the given size.
+     */
+    pub fn new_default(
+        mem_size: usize,
+        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
+        debug: bool,
+    ) -> Cpu
+
+    /**
+     * resets the cpu setting all registers to the initial values.
+     * http://forum.6502.org/viewtopic.php?p=2959
+     */
+    pub fn reset(&mut self, start_address: Option<u16>) -> Result<(), CpuError>
+
+    /**
+     * run the cpu for the given cycles, pass 0 to run indefinitely.
+     *
+     * > note that reset() must be called first to set the start address !
+     */
+     pub fn run(&mut self, cycles: usize) -> Result<(), CpuError> {
+    
+~~~
+
+under debugger (debug=true), the following features are currently supported via command-line:
+
+~~~
+?:> h
+debugger supported commands: 
+        a <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.
+        b <$address> .......................... add (execution) breakpoint at <$address>.
+        bl ..........-......................... show breakpoints.
+        a <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.
+        d <# instr> [$address] ................ disassemble <# instructions> at [$address], address defaults to pc.
+        e <$value> [$value...] <$address> ..... write one or more <$value> bytes in memory starting at <$address>.
+        g ..................................... continue execution until breakpoint or trap.
+        h ..................................... this help.
+        q ..................................... exit emulator.
+        r ..................................... show registers.
+        rs .................................... enable/disable showing registers after each step, default is off.
+        p ..................................... step (execute next instruction).
+        t [$address] .......................... reset (restart from given [$address], or defaults to reset vector).
+        v <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).
+        x <len> <$address> .................... hexdump <len> bytes at <$address>.
+~~~
+
+most of the features are currently to be considered WIP... still keep the faith :love_you_gesture:
 
 ~~~bash
 git clone <thisrepo> --recurse-submodules
-cargo test
+
+# will run the debugger test program
+cargo run
 ~~~
 
 cheers :heart:,
