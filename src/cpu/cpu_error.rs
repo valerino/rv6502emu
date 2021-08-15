@@ -28,6 +28,7 @@
  * SOFTWARE.
  */
 
+use crate::cpu::addressing_modes::AddressingModeId;
 use crate::memory::Memory;
 use std::fmt;
 
@@ -87,8 +88,8 @@ impl std::fmt::Display for CpuError {
         } else {
             write!(
                 f,
-                "Error ({}) at address=${:x}, access size={}, max memory size={}",
-                self.operation, self.address, self.access_size, self.mem_size,
+                "Error ({}) at address=${:x}, access size={}, max memory size=${:04x} ({})",
+                self.operation, self.address, self.access_size, self.mem_size, self.mem_size,
             )
         }
     }
@@ -143,6 +144,39 @@ pub(crate) fn check_address_boundaries(
             msg: msg,
         };
         return Err(e);
+    }
+    Ok(())
+}
+
+/**
+ * check memory boundaries during opcode access
+ */
+pub(crate) fn check_opcode_boundaries(
+    mem_size: usize,
+    address: usize,
+    addr_mode: AddressingModeId,
+    op: ErrorType,
+    msg: Option<String>,
+) -> Result<(), Error> {
+    match addr_mode {
+        AddressingModeId::Imp | AddressingModeId::Acc => {
+            check_address_boundaries(mem_size, address, 1, op, msg)?;
+        }
+        AddressingModeId::Abs
+        | AddressingModeId::Abx
+        | AddressingModeId::Aby
+        | AddressingModeId::Ind => {
+            check_address_boundaries(mem_size, address, 3, op, msg)?;
+        }
+        AddressingModeId::Rel
+        | AddressingModeId::Imm
+        | AddressingModeId::Zpg
+        | AddressingModeId::Zpx
+        | AddressingModeId::Zpy
+        | AddressingModeId::Iny
+        | AddressingModeId::Xin => {
+            check_address_boundaries(mem_size, address, 2, op, msg)?;
+        }
     }
     Ok(())
 }

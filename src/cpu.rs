@@ -407,9 +407,21 @@ impl Cpu {
             match debugger_res {
                 'p' => {
                     // decode
-                    let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing, _) =
+                    let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing, mrk) =
                         opcodes::OPCODE_MATRIX[b as usize];
-
+                    match cpu_error::check_opcode_boundaries(
+                        self.bus.get_memory().get_size(),
+                        self.regs.pc as usize,
+                        mrk.id,
+                        CpuErrorType::MemoryRead,
+                        None,
+                    ) {
+                        Err(e) => {
+                            self.debug_out_text(&e);
+                            break;
+                        }
+                        Ok(()) => (),
+                    };
                     // execute
                     let instr_size: i8;
                     let elapsed: usize;
@@ -425,7 +437,8 @@ impl Cpu {
                         }
                         Err(e) => {
                             // TODO: handle with debugger if attached
-                            panic!("{}", e);
+                            self.debug_out_text(&e);
+                            break;
                         }
                     };
                     // step(default), advance pc and increment the elapsed cycles

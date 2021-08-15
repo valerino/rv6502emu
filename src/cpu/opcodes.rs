@@ -38,6 +38,10 @@ use crate::utils;
 use ::function_name::named;
 use lazy_static::*;
 
+/**
+ * holds opcode information for assembler/diassembler
+ */
+#[derive(Clone, Debug, Copy)]
 pub(crate) struct OpcodeMarker {
     pub(crate) name: &'static str,
     pub(crate) id: AddressingModeId,

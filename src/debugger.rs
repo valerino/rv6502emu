@@ -173,6 +173,7 @@ impl Cpu {
         self.debug_out_text(&"cpu reset, restarting at RESET vector.");
         self.reset(None).unwrap_or(());
     }
+
     /**
      * disassemble n instructions at the given address
      */
@@ -212,9 +213,9 @@ impl Cpu {
 
         // disassemble
         self.regs.pc = addr;
-        let mut instr_count = 0;
+        let mut instr_count: u16 = 0;
         self.debug_out_text(&format!(
-            "disassembling {} instructions at ${:04x} (may overlap).\n",
+            "disassembling {} instructions at ${:04x}\n",
             n, addr
         ));
         loop {
@@ -227,18 +228,33 @@ impl Cpu {
                 }
                 Ok(ok) => b = ok,
             }
-            // decode
-            let (opcode_f, _, _, _) = opcodes::OPCODE_MATRIX[b as usize];
+            // get opcode and check access
+            let (opcode_f, _, _, mrk) = opcodes::OPCODE_MATRIX[b as usize];
             let instr_size: i8;
+            match cpu_error::check_opcode_boundaries(
+                self.bus.get_memory().get_size(),
+                self.regs.pc as usize,
+                mrk.id,
+                CpuErrorType::MemoryRead,
+                None,
+            ) {
+                Err(e) => {
+                    self.debug_out_text(&e);
+                    break;
+                }
+                Ok(()) => (),
+            };
+            // decode
             match opcode_f(self, 0, false, true) {
                 Err(e) => {
                     self.debug_out_text(&e);
-                    return;
+                    break;
                 }
                 Ok((a, _)) => instr_size = a,
             }
 
-            instr_count += 1;
+            // next
+            instr_count = instr_count.wrapping_add(1);
             if instr_count == n {
                 break;
             }
@@ -491,6 +507,21 @@ impl Cpu {
                 self.debug_out_text(&"invalid opcode!");
                 continue;
             }
+
+            // check access
+            match cpu_error::check_opcode_boundaries(
+                self.bus.get_memory().get_size(),
+                addr as usize,
+                mode_id,
+                CpuErrorType::MemoryWrite,
+                None,
+            ) {
+                Err(e) => {
+                    self.debug_out_text(&e);
+                    continue;
+                }
+                Ok(()) => (),
+            };
 
             // find a match in the opcode matrix
             let op_byte: u8;
