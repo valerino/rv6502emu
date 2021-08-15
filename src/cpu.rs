@@ -29,6 +29,7 @@
  */
 
 use crate::bus::Bus;
+use crate::debugger::Bp;
 use log::*;
 pub(crate) mod opcodes;
 use std::fmt::{Display, Error, Formatter};
@@ -216,6 +217,8 @@ pub struct Cpu {
 
     /// callback for the user (optional).
     pub cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
+
+    pub(crate) breakpoints: Vec<Bp>,
 }
 
 impl Cpu {
@@ -332,6 +335,7 @@ impl Cpu {
             debug: debug,
             debug_show_registers_after_step: false,
             cb: cb,
+            breakpoints: Vec::new(),
         };
         c
     }

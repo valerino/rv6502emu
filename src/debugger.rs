@@ -36,30 +36,74 @@ use crate::cpu::opcodes;
 use crate::cpu::opcodes::OpcodeMarker;
 use crate::cpu::Cpu;
 use crate::memory::Memory;
+use bitflags::bitflags;
 use hexplay::HexViewBuilder;
 use log::*;
 use num;
-use std::error::Error;
-use std::fmt::Display;
+use std::fmt::{Display, Error, Formatter};
 use std::io::{self, BufRead, Write};
 use std::str::SplitWhitespace;
 
-/**
- * breakpoint type
- */
-enum Breakpoint {
-    Exec,
-    Read,
-    Write,
-    ReadWrite,
+bitflags! {
+    /**
+     * flags for breakpoint types
+     */
+    pub(crate) struct BreakpointType : u8 {
+        const Exec = 0b00000001;
+        const Read = 0b00000010;
+        const Write = 0b00000100;
+    }
 }
 
 /**
  * breakpoint struct
  */
-struct Bp {
-    address: usize,
-    t: Breakpoint,
+#[derive(PartialEq, Debug)]
+pub(crate) struct Bp {
+    address: u16,
+    t: u8,
+    enabled: bool,
+}
+impl Bp {
+    /**
+     * convert BreakpointType flags to a meaningful string
+     */
+    fn flags_to_string(&self) -> String {
+        let p = BreakpointType::from_bits(self.t).unwrap();
+        let s = format!(
+            "{}{}{}",
+            if p.contains(BreakpointType::Read) {
+                "R"
+            } else {
+                "-"
+            },
+            if p.contains(BreakpointType::Write) {
+                "W"
+            } else {
+                "-"
+            },
+            if p.contains(BreakpointType::Exec) {
+                "X"
+            } else {
+                "-"
+            },
+        );
+        s
+    }
+}
+impl Display for Bp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(
+            f,
+            "${:04x} [{},{}]",
+            self.address,
+            self.flags_to_string(),
+            if self.enabled { "enabled" } else { "disabled" }
+        )
+        .expect("");
+
+        Ok(())
+    }
 }
 
 impl Cpu {
@@ -129,9 +173,9 @@ impl Cpu {
         self.debug_out_text(&"debugger supported commands: ");
         self.debug_out_text(&"\ta <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.");
         self.debug_out_text(
-            &"\tb <$address> .......................... add (execution) breakpoint at <$address>.",
+            &"\tb[x|r|w] .............................................. add read/write/execute breakpoint at <$address>.",
         );
-        self.debug_out_text(&"\tbl ..........-......................... show breakpoints.");
+        self.debug_out_text(&"\tbl .................................... show breakpoints.");
         self.debug_out_text(
                             &"\td <# instr> [$address] ................ disassemble <# instructions> at [$address], address defaults to pc.",
         );
@@ -714,9 +758,87 @@ impl Cpu {
         self.debug_out_text(&"invalid command, try 'h' for help !");
     }
 
-    fn dbg_add_breakpoint(&mut self, mut it: SplitWhitespace<'_>) {}
+    /**
+     * add a breakpoint
+     */
+    fn dbg_add_breakpoint(&mut self, cmd: &str, mut it: SplitWhitespace<'_>) {
+        // check breakpoint type
+        let t: BreakpointType;
+        match cmd {
+            "bx" => t = BreakpointType::Exec,
+            "br" => t = BreakpointType::Read,
+            "bw" => t = BreakpointType::Write,
+            "brw" | "bwr" => t = BreakpointType::Read | BreakpointType::Write,
+            _ => {
+                self.dbg_cmd_invalid();
+                return;
+            }
+        }
 
-    fn dbg_show_breakpoints(&mut self) {}
+        // get address
+        let addr_s = it.next().unwrap_or_default();
+        let addr: u16;
+        if addr_s.len() == 0 || addr_s.chars().next().unwrap_or_default() != '$' {
+            self.dbg_cmd_invalid();
+            return;
+        }
+        let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+            Err(_) => {
+                // invalid command, address invalid
+                self.dbg_cmd_invalid();
+                return;
+            }
+            Ok(a) => addr = a,
+        };
+        let _ = match cpu_error::check_address_boundaries(
+            self.bus.get_memory().get_size(),
+            addr as usize,
+            1,
+            CpuErrorType::MemoryRead,
+            None,
+        ) {
+            Err(e) => {
+                self.debug_out_text(&e);
+                return;
+            }
+            Ok(_) => (),
+        };
+
+        // add breakpoint if not already present
+        let bp = Bp {
+            address: addr,
+            t: t.bits(),
+        };
+        if self.breakpoints.contains(&bp) {
+            self.debug_out_text(&"breakpoint already set!");
+            return;
+        }
+        self.breakpoints.push(bp);
+        self.debug_out_text(&"breakpoint set!");
+    }
+
+    /**
+     * list set breakpoints
+     */
+    fn dbg_show_breakpoints(&mut self) {
+        if self.breakpoints.len() == 0 {
+            self.debug_out_text(&"no breakpoints set.");
+            return;
+        }
+
+        // walk
+        self.debug_out_text(&format!("listing {} breakpoints\n", self.breakpoints.len()));
+        let mut it = self.breakpoints.iter();
+        loop {
+            let _ = match it.next() {
+                Some(b) => {
+                    self.debug_out_text(&b);
+                }
+                None => break,
+            };
+        }
+    }
+
     /**
      * handle debugger input from stdin, if debugger is active.
      *
@@ -740,14 +862,15 @@ impl Cpu {
             let cmd = it.next().unwrap_or_default().to_ascii_lowercase();
 
             // handle command
-            match cmd.trim() {
+            let c = cmd.trim();
+            match c {
                 // assemble
                 "a" => {
                     self.dbg_assemble(it);
                     return Ok('*');
                 }
-                "b" => {
-                    self.dbg_add_breakpoint(it);
+                "bx" | "br" | "bw" | "brw" | "bwr" => {
+                    self.dbg_add_breakpoint(c, it);
                     return Ok('*');
                 }
                 "bl" => {
