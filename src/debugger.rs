@@ -176,6 +176,10 @@ impl Cpu {
             &"\tb[x|r|w] .............................................. add read/write/execute breakpoint at <$address>.",
         );
         self.debug_out_text(&"\tbl .................................... show breakpoints.");
+        self.debug_out_text(&"\tbe <n> ................................ enable breakpoint <n>.");
+        self.debug_out_text(&"\tbd <n> ................................ disable breakpoint<n>.");
+        self.debug_out_text(&"\tbdel <n> .............................. delete breakpoint<n>.");
+        self.debug_out_text(&"\tbc .................................... clear all breakpoints.");
         self.debug_out_text(
                             &"\td <# instr> [$address] ................ disassemble <# instructions> at [$address], address defaults to pc.",
         );
@@ -808,6 +812,7 @@ impl Cpu {
         let bp = Bp {
             address: addr,
             t: t.bits(),
+            enabled: true,
         };
         if self.breakpoints.contains(&bp) {
             self.debug_out_text(&"breakpoint already set!");
@@ -828,14 +833,62 @@ impl Cpu {
 
         // walk
         self.debug_out_text(&format!("listing {} breakpoints\n", self.breakpoints.len()));
-        let mut it = self.breakpoints.iter();
-        loop {
-            let _ = match it.next() {
-                Some(b) => {
-                    self.debug_out_text(&b);
-                }
-                None => break,
-            };
+        for (i, bp) in self.breakpoints.iter().enumerate() {
+            self.debug_out_text(&format!("{}... {}", i, bp));
+        }
+    }
+
+    /**
+     * enable or disable existing breakpoint
+     */
+    fn enable_disable_delete_breakpoint(&mut self, mut it: SplitWhitespace<'_>, mode: &str) {
+        // get breakpoint number
+        let n_s = it.next().unwrap_or_default();
+        let n: i8;
+        let _ = match i8::from_str_radix(&n_s, 10) {
+            Err(_) => {
+                self.dbg_cmd_invalid();
+                return;
+            }
+            Ok(a) => n = a,
+        };
+
+        let action: &str;
+        if self.breakpoints.len() >= (n as usize + 1) {
+            if mode.eq("be") {
+                // enable
+                self.breakpoints[n as usize].enabled = true;
+                action = "enabled";
+            } else if mode.eq("bd") {
+                // disable
+                self.breakpoints[n as usize].enabled = false;
+                action = "disabled";
+            } else {
+                // delete
+                self.breakpoints.remove(n as usize);
+                action = "deleted";
+            }
+            self.debug_out_text(&format!("breakpoint {} has been {}.", n, action));
+        } else {
+            // invalid size
+            self.dbg_cmd_invalid();
+        }
+    }
+
+    /**
+     * clear breakpoints list
+     */
+    fn clear_breakpoints(&mut self) {
+        self.debug_out_text(&"clear breakpoints list ? (y/n)");
+        io::stdout().flush().unwrap();
+        let mut full_string = String::new();
+        let _ = match io::stdin().lock().read_line(&mut full_string) {
+            Err(_) => return,
+            Ok(_) => (),
+        };
+        if full_string.eq_ignore_ascii_case("y") {
+            self.breakpoints.clear();
+            self.debug_out_text(&"breakpoints list cleared.");
         }
     }
 
@@ -867,6 +920,14 @@ impl Cpu {
                 // assemble
                 "a" => {
                     self.dbg_assemble(it);
+                    return Ok('*');
+                }
+                "bc" => {
+                    self.clear_breakpoints();
+                    return Ok('*');
+                }
+                "be" | "bd" | "bdel" => {
+                    self.enable_disable_delete_breakpoint(it, c);
                     return Ok('*');
                 }
                 "bx" | "br" | "bw" | "brw" | "bwr" => {
