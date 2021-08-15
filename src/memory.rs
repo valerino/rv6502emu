@@ -66,7 +66,7 @@ pub trait Memory {
     fn get_size(&self) -> usize;
 
     /**
-     * load file in memory at address.
+     * load file in memory at address. files bigger than 0xffff will be truncated.
      */
     fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError>;
 
@@ -90,14 +90,14 @@ impl Memory for DefaultMemory {
         v
     }
     fn read_byte(&mut self, address: usize) -> Result<u8, CpuError> {
-        cpu_error::check_address(self, address, 1, CpuErrorType::MemoryRead)?;
+        cpu_error::check_address_boundaries(self.size, address, 1, CpuErrorType::MemoryRead, None)?;
         self.cur.set_position(address as u64);
         let res = self.cur.read_u8()?;
         Ok(res)
     }
 
     fn read_word_le(&mut self, address: usize) -> Result<u16, CpuError> {
-        cpu_error::check_address(self, address, 2, CpuErrorType::MemoryRead)?;
+        cpu_error::check_address_boundaries(self.size, address, 2, CpuErrorType::MemoryRead, None)?;
 
         self.cur.set_position(address as u64);
         let res = self.cur.read_u16::<LittleEndian>()?;
@@ -105,14 +105,26 @@ impl Memory for DefaultMemory {
     }
 
     fn write_word_le(&mut self, address: usize, w: u16) -> Result<(), CpuError> {
-        cpu_error::check_address(self, address, 2, CpuErrorType::MemoryWrite)?;
+        cpu_error::check_address_boundaries(
+            self.size,
+            address,
+            2,
+            CpuErrorType::MemoryWrite,
+            None,
+        )?;
         self.cur.set_position(address as u64);
         let res = self.cur.write_u16::<LittleEndian>(w)?;
         Ok(res)
     }
 
     fn write_byte(&mut self, address: usize, b: u8) -> Result<(), CpuError> {
-        cpu_error::check_address(self, address, 1, CpuErrorType::MemoryWrite)?;
+        cpu_error::check_address_boundaries(
+            self.size,
+            address,
+            1,
+            CpuErrorType::MemoryWrite,
+            None,
+        )?;
 
         self.cur.set_position(address as u64);
         self.cur.write_u8(b)?;
@@ -124,24 +136,37 @@ impl Memory for DefaultMemory {
     }
 
     fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError> {
-        // check filesize
-        let attr = std::fs::metadata(path)?;
-        cpu_error::check_address(self, address, attr.len() as usize, CpuErrorType::MemoryLoad)?;
-
         // read file to a tmp vec
         let mut f = File::open(path)?;
         let mut tmp: Vec<u8> = Vec::new();
         f.read_to_end(&mut tmp)?;
+        let mut l = tmp.len();
+
+        // truncate bigger files to 64k (max addressable size)
+        if tmp.len() > 0x10000 {
+            tmp.truncate(0x10000);
+            l = 0x10000
+        }
+
+        // check size
+        cpu_error::check_address_boundaries(
+            self.size,
+            address,
+            l as usize,
+            CpuErrorType::MemoryLoad,
+            Some(String::from(path)),
+        )?;
 
         // read in memory at the given offset
         let m = self.cur.get_mut();
-        m.splice(address..attr.len() as usize, tmp);
+        m.splice(address..address + l as usize, tmp);
         Ok(())
     }
 }
 
 /**
  * returns an istance of DefaultMemory with the given size.
+ *
  */
 pub fn new_default(size: usize) -> Box<dyn Memory> {
     // create memory
@@ -149,7 +174,6 @@ pub fn new_default(size: usize) -> Box<dyn Memory> {
         size: size,
         cur: Cursor::new(Vec::with_capacity(size)),
     };
-
     // and fill with zeroes
     let v = m.cur.get_mut();
     for _ in 0..size {

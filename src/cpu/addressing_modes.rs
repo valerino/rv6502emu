@@ -177,8 +177,8 @@ impl AddressingMode for AbsoluteAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
-        let b3 = m.read_byte((_c.regs.pc + 2) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
+        let b3 = m.read_byte((_c.regs.pc.wrapping_add(2)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}",
             _c.regs.pc,
@@ -216,8 +216,8 @@ impl AddressingMode for AbsoluteXAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
-        let b3 = m.read_byte((_c.regs.pc + 2) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
+        let b3 = m.read_byte((_c.regs.pc.wrapping_add(2)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, X",
             _c.regs.pc,
@@ -236,7 +236,7 @@ impl AddressingMode for AbsoluteXAddressing {
         let w = _c
             .bus
             .get_memory()
-            .read_word_le((_c.regs.pc + 1) as usize)?;
+            .read_word_le((_c.regs.pc.wrapping_add(1)) as usize)?;
         let ww = w.wrapping_add(_c.regs.x as u16);
 
         // check for page crossing, in case we need to add a cycle
@@ -261,8 +261,8 @@ impl AddressingMode for AbsoluteYAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
-        let b3 = m.read_byte((_c.regs.pc + 2) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
+        let b3 = m.read_byte((_c.regs.pc.wrapping_add(2)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, Y",
             _c.regs.pc,
@@ -281,7 +281,7 @@ impl AddressingMode for AbsoluteYAddressing {
         let w = _c
             .bus
             .get_memory()
-            .read_word_le((_c.regs.pc + 1) as usize)?;
+            .read_word_le((_c.regs.pc.wrapping_add(1)) as usize)?;
         let ww = w.wrapping_add(_c.regs.y as u16);
 
         // check for page crossing, in case we need to add a cycle
@@ -305,7 +305,7 @@ impl AddressingMode for ImmediateAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x}\t\t-->\t{} #${:02x}",
             _c.regs.pc,
@@ -320,7 +320,10 @@ impl AddressingMode for ImmediateAddressing {
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
-        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let w = _c
+            .bus
+            .get_memory()
+            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok((w as u16, false))
     }
 }
@@ -354,8 +357,8 @@ impl AddressingMode for IndirectAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
-        let b3 = m.read_byte((_c.regs.pc + 2) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
+        let b3 = m.read_byte((_c.regs.pc.wrapping_add(2)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} (${:04x})",
             _c.regs.pc,
@@ -401,7 +404,7 @@ impl AddressingMode for XIndirectAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}, X)",
             _c.regs.pc,
@@ -417,7 +420,10 @@ impl AddressingMode for XIndirectAddressing {
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
         // read address in zeropage
-        let mut w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let mut w = _c
+            .bus
+            .get_memory()
+            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
 
         // add x (wrapping), and read word
         w = w.wrapping_add(_c.regs.x);
@@ -446,7 +452,7 @@ impl AddressingMode for IndirectYAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}), Y",
             _c.regs.pc,
@@ -462,7 +468,10 @@ impl AddressingMode for IndirectYAddressing {
         add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
         // read address contained at address in the zeropage
-        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let w = _c
+            .bus
+            .get_memory()
+            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         let mut ww = _c.bus.get_memory().read_word_le(w as usize)?;
 
         // add y
@@ -492,7 +501,7 @@ impl AddressingMode for RelativeAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}",
             _c.regs.pc,
@@ -508,7 +517,10 @@ impl AddressingMode for RelativeAddressing {
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
         // this is the offset to be added (signed) to PC
-        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let w = _c
+            .bus
+            .get_memory()
+            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
 
         // this will check for page crossing too (check mandatory in relative addressing)
         let (_, cross) = get_relative_branch_target(_c.regs.pc, w as u16);
@@ -531,7 +543,7 @@ impl AddressingMode for ZeroPageAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}",
             _c.regs.pc,
@@ -547,7 +559,10 @@ impl AddressingMode for ZeroPageAddressing {
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
         // read address in the zeropage
-        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let w = _c
+            .bus
+            .get_memory()
+            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
 
         Ok((w as u16, false))
     }
@@ -567,7 +582,7 @@ impl AddressingMode for ZeroPageXAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, X",
             _c.regs.pc,
@@ -583,7 +598,10 @@ impl AddressingMode for ZeroPageXAddressing {
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
         // read address in the zeropage
-        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let w = _c
+            .bus
+            .get_memory()
+            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
 
         // and add x, wrapping
         let w = w.wrapping_add(_c.regs.x);
@@ -605,7 +623,7 @@ impl AddressingMode for ZeroPageYAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = _c.bus.get_memory();
         let b1 = m.read_byte(_c.regs.pc as usize)?;
-        let b2 = m.read_byte((_c.regs.pc + 1) as usize)?;
+        let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
             "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, Y",
             _c.regs.pc,
@@ -621,7 +639,10 @@ impl AddressingMode for ZeroPageYAddressing {
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
         // read address in the zeropage
-        let w = _c.bus.get_memory().read_byte((_c.regs.pc + 1) as usize)?;
+        let w = _c
+            .bus
+            .get_memory()
+            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
 
         // and add y, wrapping
         let w = w.wrapping_add(_c.regs.y);

@@ -124,23 +124,23 @@ pub(crate) fn new_invalid_opcode_error(address: usize) -> CpuError {
 /**
  * check memory boundaries during access
  */
-pub(crate) fn check_address(
-    mem: &dyn Memory,
+pub(crate) fn check_address_boundaries(
+    mem_size: usize,
     address: usize,
     access_size: usize,
     // we use the ErrorType to identify the operation (read/write/load)
     op: ErrorType,
+    msg: Option<String>,
 ) -> Result<(), Error> {
     // check if memory access overflows
-    let mem_size = mem.get_size();
-    if address + access_size > mem_size {
+    if (address + access_size - 1 > mem_size) || (address + access_size - 1) > 0xffff {
         // report read or write error
         let e = CpuError {
             operation: op,
             address: address,
             mem_size: mem_size,
             access_size: access_size,
-            msg: None,
+            msg: msg,
         };
         return Err(e);
     }

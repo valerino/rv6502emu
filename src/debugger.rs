@@ -30,7 +30,8 @@
 
 use crate::cpu::addressing_modes;
 use crate::cpu::addressing_modes::*;
-use crate::cpu::cpu_error::CpuError;
+use crate::cpu::cpu_error;
+use crate::cpu::cpu_error::{CpuError, CpuErrorType};
 use crate::cpu::opcodes;
 use crate::cpu::opcodes::OpcodeMarker;
 use crate::cpu::Cpu;
@@ -131,7 +132,6 @@ impl Cpu {
             &"\tb <$address> .......................... add (execution) breakpoint at <$address>.",
         );
         self.debug_out_text(&"\tbl ..........-......................... show breakpoints.");
-        self.debug_out_text(&"\ta <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.");
         self.debug_out_text(
                             &"\td <# instr> [$address] ................ disassemble <# instructions> at [$address], address defaults to pc.",
         );
@@ -227,7 +227,6 @@ impl Cpu {
                 }
                 Ok(ok) => b = ok,
             }
-
             // decode
             let (opcode_f, _, _, _) = opcodes::OPCODE_MATRIX[b as usize];
             let instr_size: i8;
@@ -255,7 +254,7 @@ impl Cpu {
     /**
      * write byte value/s at the given address.
      */
-    fn dbg_write_value(&mut self, mut it: SplitWhitespace<'_>) {
+    fn dbg_edit_memory(&mut self, it: SplitWhitespace<'_>) {
         // turn to collection
         let col: Vec<&str> = it.collect();
         let l = col.len();
@@ -285,9 +284,25 @@ impl Cpu {
             Ok(a) => addr = a,
         };
 
+        // check access
+        let mem = self.bus.get_memory();
+        let _ = match cpu_error::check_address_boundaries(
+            mem.get_size(),
+            addr as usize,
+            col.len() - 1,
+            CpuErrorType::MemoryWrite,
+            None,
+        ) {
+            Err(e) => {
+                self.debug_out_text(&e);
+                return;
+            }
+            Ok(()) => (),
+        };
+
         // write all items starting at address (may overlap)
         self.debug_out_text(&format!(
-            "writing {} bytes starting at {} (may overlap).\n",
+            "writing {} bytes starting at {}.\n",
             l - 1,
             addr_s
         ));
@@ -547,7 +562,7 @@ impl Cpu {
     fn dbg_dump(&mut self, mut it: SplitWhitespace<'_>) {
         // check input
         let len_s = it.next().unwrap_or_default();
-        let mut num_bytes = u16::from_str_radix(&len_s, 10).unwrap_or_default();
+        let num_bytes = u16::from_str_radix(&len_s, 10).unwrap_or_default();
         if num_bytes == 0 {
             // invalid command, missing number of bytes to dump
             self.dbg_cmd_invalid();
@@ -576,16 +591,24 @@ impl Cpu {
             addr = self.regs.pc;
         }
 
-        // get the end address
-        let mut addr_end: u16 = addr.wrapping_add(num_bytes as u16).wrapping_sub(1);
+        // check access
         let mem = self.bus.get_memory();
-        if addr_end < addr {
-            // address wrapped, use max memory size as the end
-            let n_bytes_original = num_bytes;
-            num_bytes = (mem.get_size() as u16).wrapping_sub(addr);
-            addr_end = addr.wrapping_add(num_bytes).wrapping_sub(1);
-            println!("warning: requested {} bytes, dumping {} bytes only due to overlapping with maximum memory size=${:04x}", n_bytes_original, num_bytes, mem.get_size() - 1);
-        }
+        let _ = match cpu_error::check_address_boundaries(
+            mem.get_size(),
+            addr as usize,
+            num_bytes as usize,
+            CpuErrorType::MemoryRead,
+            None,
+        ) {
+            Err(e) => {
+                self.debug_out_text(&e);
+                return;
+            }
+            Ok(()) => (),
+        };
+
+        // get the end address
+        let addr_end: u16 = addr.wrapping_add(num_bytes as u16).wrapping_sub(1);
         let m_slice = &mem.as_vec()[addr as usize..=addr_end as usize];
 
         // dump!
@@ -707,7 +730,7 @@ impl Cpu {
                 }
                 // edit memory
                 "e" => {
-                    self.dbg_write_value(it);
+                    self.dbg_edit_memory(it);
                     return Ok('*');
                 }
                 // go
