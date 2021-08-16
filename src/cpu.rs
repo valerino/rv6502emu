@@ -29,7 +29,8 @@
  */
 
 use crate::bus::Bus;
-use crate::debugger::Bp;
+use crate::debugger::breakpoints::Bp;
+use crate::debugger::Debugger;
 use log::*;
 pub(crate) mod opcodes;
 use std::fmt::{Display, Error, Formatter};
@@ -38,6 +39,7 @@ use bitflags::bitflags;
 pub(crate) mod addressing_modes;
 
 pub mod cpu_error;
+use crate::utils::*;
 use cpu_error::{CpuError, CpuErrorType};
 
 /**
@@ -203,25 +205,34 @@ pub struct Cpu {
     /// current cpu cycles.
     pub cycles: usize,
 
-    /// debugger enabled/disabled.
+    /// debug ?
     pub debug: bool,
-
-    /// set by the debugger with the 'g' (continue until break/trap) command.
-    pub(crate) going: bool,
-
-    /// set to show registers after step in the debugger, default is false (use the 'r' command).
-    pub(crate) debug_show_registers_after_step: bool,
 
     /// the bus.
     pub bus: Box<dyn Bus>,
 
     /// callback for the user (optional).
     pub cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
-
-    pub(crate) breakpoints: Vec<Bp>,
 }
 
 impl Cpu {
+    /**
+     * activate logging on stdout through env_logger (max level)
+     */
+    pub fn enable_logging(&self, enable: bool) {
+        if enable == true {
+            let _ = env_logger::builder()
+                .filter_level(log::LevelFilter::max())
+                .try_init();
+            log::set_max_level(log::LevelFilter::max());
+        } else {
+            let _ = env_logger::builder()
+                .filter_level(log::LevelFilter::Off)
+                .try_init();
+            log::set_max_level(log::LevelFilter::Off);
+        }
+    }
+
     /**
      * call installed cpu callback if any
      */
@@ -330,12 +341,9 @@ impl Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
-            going: false,
             bus: b,
-            debug: debug,
-            debug_show_registers_after_step: false,
             cb: cb,
-            breakpoints: Vec::new(),
+            debug: debug,
         };
         c
     }
@@ -402,12 +410,16 @@ impl Cpu {
      * > note that reset() must be called first to set the start address !
      */
     pub fn run(&mut self, cycles: usize) -> Result<(), CpuError> {
+        // create internal debugger
+        let mut dbg = Debugger::new(self.debug);
+
+        // loop
         'interpreter: loop {
             // fetch an instruction
             let b = self.fetch()?;
 
             // handles debugger if any
-            let debugger_res = self.handle_debugger_input_stdin()?;
+            let debugger_res = dbg.handle_debugger_input_stdin(self)?;
             match debugger_res {
                 'p' => {
                     // decode
@@ -421,7 +433,7 @@ impl Cpu {
                         None,
                     ) {
                         Err(e) => {
-                            self.debug_out_text(&e);
+                            debug_out_text(&e);
                             break;
                         }
                         Ok(()) => (),
@@ -441,16 +453,13 @@ impl Cpu {
                         }
                         Err(e) => {
                             // TODO: handle with debugger if attached
-                            self.debug_out_text(&e);
+                            debug_out_text(&e);
                             break;
                         }
                     };
                     // step(default), advance pc and increment the elapsed cycles
                     self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
                     self.cycles = self.cycles.wrapping_add(elapsed);
-                    if self.debug_show_registers_after_step {
-                        self.debug_out_registers();
-                    }
 
                     if cycles != 0 && elapsed >= cycles {
                         break 'interpreter;

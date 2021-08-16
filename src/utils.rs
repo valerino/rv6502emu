@@ -28,6 +28,12 @@
  * SOFTWARE.
  */
 
+use crate::cpu::addressing_modes::AddressingMode;
+use crate::cpu::cpu_error::CpuError;
+use crate::cpu::Cpu;
+use log::*;
+use std::fmt::Display;
+
 /**
  * simply check bit 7 for signed/unsigned byte
  */
@@ -36,4 +42,38 @@ pub(crate) fn is_signed(n: u8) -> bool {
         return false;
     }
     true
+}
+
+/**
+ * display opcode string, currently implemented to stdout
+ */
+pub(crate) fn debug_out_opcode<A: AddressingMode>(
+    c: &mut Cpu,
+    opcode_name: &str,
+) -> Result<(), CpuError> {
+    if log::log_enabled!(Level::max()) {
+        let opc_string = A::repr(c, opcode_name)?;
+        //debug!("\t{}", opc_string);
+        println!("\t{}", opc_string);
+    }
+    Ok(())
+}
+/**
+ * display opcode string, currently implemented to stdout
+ */
+pub(crate) fn debug_out_text(d: &dyn Display) {
+    if log::log_enabled!(Level::max()) {
+        //debug!("{}", s);
+        println!("{}", d);
+    }
+}
+
+/**
+ * display registers, currently implemented to stdout
+ */
+pub(crate) fn debug_out_registers(c: &Cpu) {
+    if log::log_enabled!(Level::max()) {
+        //debug!("{}", self.regs);
+        println!("\t{}", c.regs);
+    }
 }

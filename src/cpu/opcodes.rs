@@ -35,6 +35,7 @@ use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuError;
 use crate::cpu::Cpu;
 use crate::utils;
+use crate::utils::*;
 use ::function_name::named;
 use lazy_static::*;
 
@@ -172,7 +173,7 @@ fn adc<A: AddressingMode>(
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((0, 0));
@@ -222,7 +223,7 @@ fn ahx<A: AddressingMode>(
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -241,7 +242,7 @@ fn alr<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -260,7 +261,7 @@ fn anc<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -279,7 +280,7 @@ fn and<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -297,7 +298,7 @@ fn arr<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -316,7 +317,7 @@ fn asl<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -335,7 +336,7 @@ fn axs<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -354,7 +355,7 @@ fn bcc<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -373,7 +374,7 @@ fn bcs<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -392,7 +393,7 @@ fn beq<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -411,7 +412,7 @@ fn bit<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -430,7 +431,7 @@ fn bmi<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -449,7 +450,7 @@ fn bne<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -468,7 +469,7 @@ fn bpl<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -487,7 +488,7 @@ fn brk<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -506,7 +507,7 @@ fn bvc<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -525,7 +526,7 @@ fn bvs<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -544,7 +545,7 @@ fn clc<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -563,7 +564,7 @@ fn cld<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -582,7 +583,7 @@ fn cli<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -601,7 +602,7 @@ fn clv<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -620,7 +621,7 @@ fn cmp<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -639,7 +640,7 @@ fn cpx<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -658,7 +659,7 @@ fn cpy<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -677,7 +678,7 @@ fn dcp<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -696,7 +697,7 @@ fn dec<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -715,7 +716,7 @@ fn dex<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -734,7 +735,7 @@ fn dey<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -753,7 +754,7 @@ fn eor<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -772,7 +773,7 @@ fn inc<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -791,7 +792,7 @@ fn isc<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -810,7 +811,7 @@ fn inx<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -829,7 +830,7 @@ fn iny<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -848,7 +849,7 @@ fn jmp<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -867,7 +868,7 @@ fn jsr<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -886,7 +887,7 @@ fn kil<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     // this is an invalid opcode and emulation should be halted!
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -903,7 +904,7 @@ fn las<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -922,7 +923,7 @@ fn lax<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -941,7 +942,7 @@ fn lda<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -966,7 +967,7 @@ fn ldx<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -990,7 +991,7 @@ fn ldy<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1015,7 +1016,7 @@ fn lsr<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1033,7 +1034,7 @@ fn nop<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1051,7 +1052,7 @@ fn ora<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1069,7 +1070,7 @@ fn pha<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1087,7 +1088,7 @@ fn php<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1105,7 +1106,7 @@ fn pla<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1123,7 +1124,7 @@ fn plp<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1141,7 +1142,7 @@ fn rla<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1159,7 +1160,7 @@ fn rol<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1177,7 +1178,7 @@ fn ror<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1195,7 +1196,7 @@ fn rra<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1213,7 +1214,7 @@ fn rti<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1231,7 +1232,7 @@ fn rts<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1249,7 +1250,7 @@ fn sax<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1271,7 +1272,7 @@ fn sbc<A: AddressingMode>(
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1323,7 +1324,7 @@ fn sec<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1343,7 +1344,7 @@ fn sed<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1362,7 +1363,7 @@ fn sei<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1382,7 +1383,7 @@ fn shx<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1400,7 +1401,7 @@ fn shy<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1418,7 +1419,7 @@ fn slo<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1436,7 +1437,7 @@ fn sre<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1454,7 +1455,7 @@ fn sta<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1473,7 +1474,7 @@ fn stx<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1491,7 +1492,7 @@ fn sty<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1509,7 +1510,7 @@ fn tas<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1527,7 +1528,7 @@ fn tax<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1545,7 +1546,7 @@ fn tay<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1563,7 +1564,7 @@ fn tsx<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1581,7 +1582,7 @@ fn txa<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1599,7 +1600,7 @@ fn txs<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1618,7 +1619,7 @@ fn tya<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
@@ -1636,7 +1637,7 @@ fn xaa<A: AddressingMode>(
     decode_only: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    c.debug_out_opcode::<A>(function_name!())?;
+    debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
         return Ok((A::len(), 0));
