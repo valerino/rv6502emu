@@ -29,9 +29,7 @@
  */
 
 use crate::bus::Bus;
-use crate::debugger::breakpoints::Bp;
-use crate::debugger::Debugger;
-use log::*;
+use debugger::Debugger;
 pub(crate) mod opcodes;
 use std::fmt::{Display, Error, Formatter};
 
@@ -41,6 +39,7 @@ pub(crate) mod addressing_modes;
 pub mod cpu_error;
 use crate::utils::*;
 use cpu_error::{CpuError, CpuErrorType};
+mod debugger;
 
 /**
  * the cpu registers.

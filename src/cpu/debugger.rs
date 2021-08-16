@@ -28,16 +28,10 @@
  * SOFTWARE.
  */
 
-use crate::cpu::addressing_modes;
-use crate::cpu::addressing_modes::*;
 use crate::cpu::cpu_error;
-use crate::cpu::cpu_error::{CpuError, CpuErrorType};
-use crate::cpu::opcodes;
-use crate::cpu::opcodes::OpcodeMarker;
+use crate::cpu::cpu_error::CpuErrorType;
 use crate::cpu::Cpu;
-use crate::memory::Memory;
 use crate::utils::*;
-use bitflags::bitflags;
 use breakpoints::Bp;
 use hexplay::HexViewBuilder;
 use std::io;
@@ -367,7 +361,7 @@ impl Debugger {
                 return Ok('*');
             }
             "be" | "bd" | "bdel" => {
-                self.cmd_enable_disable_delete_breakpoint(c, cmd, it);
+                self.cmd_enable_disable_delete_breakpoint(cmd, it);
                 return Ok('*');
             }
             "bx" | "br" | "bw" | "brw" | "bwr" => {

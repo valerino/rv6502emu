@@ -30,13 +30,12 @@
 
 use crate::cpu::addressing_modes::AddressingModeId;
 use crate::cpu::cpu_error;
-use crate::cpu::cpu_error::{CpuError, CpuErrorType};
+use crate::cpu::cpu_error::CpuErrorType;
+use crate::cpu::debugger::Debugger;
 use crate::cpu::opcodes;
 use crate::cpu::opcodes::OpcodeMarker;
 use crate::cpu::Cpu;
-use crate::debugger::Debugger;
 use crate::utils::*;
-use std::fmt::{Display, Error, Formatter};
 use std::io;
 use std::io::{BufRead, Write};
 
@@ -139,12 +138,7 @@ impl Debugger {
     /**
      * find instruction in the opcode matrix
      */
-    fn find_instruction<'a>(
-        &self,
-        c: &'a Cpu,
-        s: &str,
-        id: AddressingModeId,
-    ) -> Option<(&'a OpcodeMarker, u8)> {
+    fn find_instruction(&self, s: &str, id: AddressingModeId) -> Option<(&OpcodeMarker, u8)> {
         for (i, (_, _, _, op)) in opcodes::OPCODE_MATRIX.iter().enumerate() {
             if op.name.eq(s) && op.id == id {
                 return Some((&op, i as u8));
@@ -315,7 +309,7 @@ impl Debugger {
 
             // find a match in the opcode matrix
             let op_byte: u8;
-            let _ = match self.find_instruction(c, &opcode, mode_id) {
+            let _ = match self.find_instruction(&opcode, mode_id) {
                 None => {
                     debug_out_text(&"invalid opcode!");
                     continue;

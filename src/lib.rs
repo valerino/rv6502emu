@@ -33,9 +33,6 @@
 /// implements the cpu.
 pub mod cpu;
 
-/// implements the debugger.
-pub mod debugger;
-
 /// implements the emulated memory.
 pub mod memory;
 

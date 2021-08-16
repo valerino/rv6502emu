@@ -29,9 +29,9 @@
  */
 
 use crate::cpu::cpu_error;
-use crate::cpu::cpu_error::{CpuError, CpuErrorType};
+use crate::cpu::cpu_error::CpuErrorType;
+use crate::cpu::debugger::Debugger;
 use crate::cpu::Cpu;
-use crate::debugger::Debugger;
 use crate::utils::*;
 use bitflags::bitflags;
 use std::fmt::Display;
@@ -46,13 +46,13 @@ bitflags! {
      */
     pub(crate) struct BreakpointType : u8 {
         /// triggers on execute.
-        const Exec = 0b00000001;
+        const EXEC = 0b00000001;
 
         /// triggers on memory read.
-        const Read = 0b00000010;
+        const READ = 0b00000010;
 
         /// triggers on memory write.
-        const Write = 0b00000100;
+        const WRITE = 0b00000100;
     }
 }
 
@@ -73,17 +73,17 @@ impl Bp {
         let p = BreakpointType::from_bits(self.t).unwrap();
         let s = format!(
             "{}{}{}",
-            if p.contains(BreakpointType::Read) {
+            if p.contains(BreakpointType::READ) {
                 "R"
             } else {
                 "-"
             },
-            if p.contains(BreakpointType::Write) {
+            if p.contains(BreakpointType::WRITE) {
                 "W"
             } else {
                 "-"
             },
-            if p.contains(BreakpointType::Exec) {
+            if p.contains(BreakpointType::EXEC) {
                 "X"
             } else {
                 "-"
@@ -121,10 +121,10 @@ impl Debugger {
         // check breakpoint type
         let t: BreakpointType;
         match cmd {
-            "bx" => t = BreakpointType::Exec,
-            "br" => t = BreakpointType::Read,
-            "bw" => t = BreakpointType::Write,
-            "brw" | "bwr" => t = BreakpointType::Read | BreakpointType::Write,
+            "bx" => t = BreakpointType::EXEC,
+            "br" => t = BreakpointType::READ,
+            "bw" => t = BreakpointType::WRITE,
+            "brw" | "bwr" => t = BreakpointType::READ | BreakpointType::WRITE,
             _ => {
                 self.cmd_invalid();
                 return;
@@ -196,7 +196,6 @@ impl Debugger {
      */
     pub(super) fn cmd_enable_disable_delete_breakpoint(
         &mut self,
-        c: &mut Cpu,
         mode: &str,
         mut it: SplitWhitespace<'_>,
     ) {

@@ -29,7 +29,6 @@
  */
 
 use crate::cpu::addressing_modes::AddressingModeId;
-use crate::memory::Memory;
 use std::fmt;
 
 /**
