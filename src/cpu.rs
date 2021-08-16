@@ -29,6 +29,7 @@
  */
 
 use crate::bus::Bus;
+use debugger::breakpoints::BreakpointType;
 use debugger::Debugger;
 pub(crate) mod opcodes;
 use std::fmt::{Display, Error, Formatter};
@@ -413,6 +414,7 @@ impl Cpu {
         let mut dbg = Debugger::new(self.debug);
 
         // loop
+        let mut bp_triggered: i8 = 0;
         'interpreter: loop {
             // fetch an instruction
             let b = self.fetch()?;
@@ -437,14 +439,30 @@ impl Cpu {
                         }
                         Ok(()) => (),
                     };
-                    // execute
+
+                    // check if we have a breakpoint at pc
+                    if bp_triggered == 0 {
+                        let bp_idx: i8;
+                        match dbg.has_enabled_breakpoint(self.regs.pc, BreakpointType::EXEC) {
+                            None => (),
+                            Some(idx) => {
+                                bp_triggered = 1;
+                                bp_idx = idx;
+                                debug_out_text(&format!("breakpoint {} triggered!", bp_idx));
+                                // stop 'g' command, if any
+                                dbg.going = false;
+                            }
+                        };
+                    }
+
+                    // execute (or just decode, if breakpoint is set)
                     let instr_size: i8;
                     let elapsed: usize;
                     let _ = match opcode_f(
                         self,
                         opcode_cycles,
                         add_extra_cycle_on_page_crossing,
-                        false,
+                        bp_triggered == 1, // when bp_triggered = 1, only decoding is done (no exec)
                     ) {
                         Ok((a, b)) => {
                             instr_size = a;
@@ -456,10 +474,15 @@ impl Cpu {
                             break;
                         }
                     };
-                    // step(default), advance pc and increment the elapsed cycles
-                    self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
-                    self.cycles = self.cycles.wrapping_add(elapsed);
 
+                    if bp_triggered == 0 || bp_triggered == 2 {
+                        // step, advance pc and increment the elapsed cycles (only if a breakpoint has not triggered!)
+                        self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
+                        self.cycles = self.cycles.wrapping_add(elapsed);
+                        bp_triggered = 0;
+                    } else {
+                        bp_triggered = 2;
+                    }
                     if cycles != 0 && elapsed >= cycles {
                         break 'interpreter;
                     }

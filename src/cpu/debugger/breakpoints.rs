@@ -61,10 +61,11 @@ bitflags! {
  */
 #[derive(PartialEq, Debug)]
 pub(crate) struct Bp {
-    address: u16,
-    t: u8,
-    enabled: bool,
+    pub(super) address: u16,
+    pub(super) t: u8,
+    pub(super) enabled: bool,
 }
+
 impl Bp {
     /**
      * convert BreakpointType flags to a meaningful string
@@ -161,17 +162,30 @@ impl Debugger {
         };
 
         // add breakpoint if not already present
-        let bp = Bp {
+        for (_, bp) in self.breakpoints.iter().enumerate() {
+            if bp.address == addr && ((bp.t & t.bits()) != 0) {
+                debug_out_text(&"breakpoint already set!");
+                return;
+            }
+        }
+        self.breakpoints.push(Bp {
             address: addr,
             t: t.bits(),
             enabled: true,
-        };
-        if self.breakpoints.contains(&bp) {
-            debug_out_text(&"breakpoint already set!");
-            return;
-        }
-        self.breakpoints.push(bp);
+        });
         debug_out_text(&"breakpoint set!");
+    }
+
+    /**
+     * check if there's a breakpoint at the given address and it's enabled, and return its index.
+     */
+    pub(crate) fn has_enabled_breakpoint(&self, addr: u16, t: BreakpointType) -> Option<i8> {
+        for (i, bp) in self.breakpoints.iter().enumerate() {
+            if bp.address == addr && bp.enabled && ((bp.t & t.bits()) != 0) {
+                return Some(i as i8);
+            }
+        }
+        None
     }
 
     /**
@@ -244,7 +258,7 @@ impl Debugger {
             Err(_) => return,
             Ok(_) => (),
         };
-        if full_string.eq_ignore_ascii_case("y") {
+        if full_string.trim().eq_ignore_ascii_case("y") {
             self.breakpoints.clear();
             debug_out_text(&"breakpoints list cleared.");
         }

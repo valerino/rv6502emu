@@ -32,7 +32,7 @@ use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuErrorType;
 use crate::cpu::Cpu;
 use crate::utils::*;
-use breakpoints::Bp;
+use breakpoints::{Bp, BreakpointType};
 use hexplay::HexViewBuilder;
 use std::io;
 use std::io::{BufRead, Write};
