@@ -252,7 +252,7 @@ impl Debugger {
     fn cmd_show_help(&self) {
         println!("debugger supported commands:");
         println!("\ta <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.");
-        println!("\tb[x|r|w] .............................................. add read/write/execute breakpoint at <$address>.",
+        println!("\tb[x|r|w] .............................. add read/write/execute breakpoint at <$address>.",
         );
         println!("\tbl .................................... show breakpoints.");
         println!("\tbe <n> ................................ enable breakpoint <n>.");

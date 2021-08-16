@@ -8,6 +8,7 @@ hopefully this will work too once finished, i plan to use it for a rust-based At
 
 ## features
 
+- full featured debugger: ~90% (_command-line only currently_)
 - undocumented opcodes: ~100%
 - disassembler : 100%
 - assembler : 100%
@@ -55,18 +56,20 @@ under debugger (debug=true), the following features are currently supported via 
 
 ~~~
 ?:> h
-debugger supported commands: 
+debugger supported commands:
         a <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.
-        b <$address> .......................... add (execution) breakpoint at <$address>.
-        bl ..........-......................... show breakpoints.
-        a <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.
+        b[x|r|w] .............................. add read/write/execute breakpoint at <$address>.
+        bl .................................... show breakpoints.
+        be <n> ................................ enable breakpoint <n>.
+        bd <n> ................................ disable breakpoint<n>.
+        bdel <n> .............................. delete breakpoint <n>.
+        bc .................................... clear all breakpoints.
         d <# instr> [$address] ................ disassemble <# instructions> at [$address], address defaults to pc.
         e <$value> [$value...] <$address> ..... write one or more <$value> bytes in memory starting at <$address>.
         g ..................................... continue execution until breakpoint or trap.
         h ..................................... this help.
         q ..................................... exit emulator.
         r ..................................... show registers.
-        rs .................................... enable/disable showing registers after each step, default is off.
         p ..................................... step (execute next instruction).
         t [$address] .......................... reset (restart from given [$address], or defaults to reset vector).
         v <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).
