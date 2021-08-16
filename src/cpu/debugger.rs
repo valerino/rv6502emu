@@ -32,8 +32,9 @@ use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuErrorType;
 use crate::cpu::Cpu;
 use crate::utils::*;
-use breakpoints::{Bp, BreakpointType};
+use breakpoints::Bp;
 use hexplay::HexViewBuilder;
+use std::fs::File;
 use std::io;
 use std::io::{BufRead, Write};
 use std::str::SplitWhitespace;
@@ -179,42 +180,49 @@ impl Debugger {
     }
 
     /**
-     * hexdump n bytes at the given address
+     * save/hexdump memory
      */
-    fn cmd_dump(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) {
+    fn cmd_dump_save_memory(&self, c: &mut Cpu, cmd: &str, mut it: SplitWhitespace<'_>) {
         // check input
         let len_s = it.next().unwrap_or_default();
+        let mem = c.bus.get_memory();
         let num_bytes = u16::from_str_radix(&len_s, 10).unwrap_or_default();
         if num_bytes == 0 {
-            // invalid command, missing number of bytes to dump
-            self.cmd_invalid();
-            return;
+            // set to full memory size
+            mem.get_size();
         }
         let addr_s = it.next().unwrap_or_default();
         let addr: u16;
 
         // get the start address
-        if addr_s.len() > 0 {
-            if addr_s.chars().next().unwrap_or_default() != '$' {
+        if addr_s.chars().next().unwrap_or_default() != '$' {
+            // invalid command, address invalid
+            self.cmd_invalid();
+            return;
+        }
+        let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+            Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
                 return;
             }
-            let _ = match u16::from_str_radix(&addr_s[1..], 16) {
-                Err(_) => {
-                    // invalid command, address invalid
-                    self.cmd_invalid();
-                    return;
-                }
-                Ok(a) => addr = a,
-            };
-        } else {
-            // defaults to pc
-            addr = c.regs.pc;
+            Ok(a) => addr = a,
+        };
+
+        let mut is_save: bool = false;
+        let mut file_path: &str = "";
+        if cmd.eq("s") {
+            is_save = true;
+            // get path
+            file_path = it.next().unwrap_or_default();
+            if file_path.len() == 0 {
+                // invalid command, path invalid
+                self.cmd_invalid();
+                return;
+            }
         }
 
         // check access
-        let mem = c.bus.get_memory();
         let _ = match cpu_error::check_address_boundaries(
             mem.get_size(),
             addr as usize,
@@ -233,17 +241,81 @@ impl Debugger {
         let addr_end: u16 = addr.wrapping_add(num_bytes as u16).wrapping_sub(1);
         let m_slice = &mem.as_vec()[addr as usize..=addr_end as usize];
 
-        // dump!
-        // MAYBE_FIX: if not using a copy, borrow checker complains of mutable reference to *self used twice (due to self.bus.get_memory())
-        let mut sl = vec![0; m_slice.len()];
-        sl.copy_from_slice(&m_slice);
-        debug_out_text(&format!("dumping {} bytes at ${:04x}\n", num_bytes, addr));
-        let dump = HexViewBuilder::new(&sl)
-            .address_offset(addr as usize)
-            .row_width(16)
-            .finish();
+        if is_save {
+            // save to file
+            let _ = match File::create(file_path) {
+                Err(e) => {
+                    // error
+                    debug_out_text(&e);
+                    return;
+                }
+                Ok(mut f) => {
+                    let _ = match f.write_all(m_slice) {
+                        Err(e) => {
+                            // error
+                            debug_out_text(&e);
+                            return;
+                        }
+                        Ok(_) => debug_out_text(&"file saved!"),
+                    };
+                }
+            };
+        } else {
+            // dump hex
+            let mut sl = vec![0; m_slice.len()];
+            sl.copy_from_slice(&m_slice);
+            debug_out_text(&format!("dumping {} bytes at ${:04x}\n", num_bytes, addr));
+            let dump = HexViewBuilder::new(&sl)
+                .address_offset(addr as usize)
+                .row_width(16)
+                .finish();
 
-        debug_out_text(&dump);
+            debug_out_text(&dump);
+        }
+    }
+
+    /**
+     * load file in memory
+     */
+    fn cmd_load_memory(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) {
+        // check input
+        let addr_s = it.next().unwrap_or_default();
+        let addr: u16;
+
+        // get the start address
+        if addr_s.chars().next().unwrap_or_default() != '$' {
+            // invalid command, address invalid
+            self.cmd_invalid();
+            return;
+        }
+        let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+            Err(_) => {
+                // invalid command, address invalid
+                self.cmd_invalid();
+                return;
+            }
+            Ok(a) => addr = a,
+        };
+
+        // get path
+        let file_path = it.next().unwrap_or_default();
+        if file_path.len() == 0 {
+            // invalid command, path invalid
+            self.cmd_invalid();
+            return;
+        }
+        // clear memory first
+        let mem = c.bus.get_memory();
+        mem.clear();
+
+        // and load
+        match mem.load(file_path, addr as usize) {
+            Err(e) => {
+                debug_out_text(&e);
+                return;
+            }
+            Ok(()) => debug_out_text(&"file loaded!"),
+        };
     }
 
     /**
@@ -266,9 +338,13 @@ impl Debugger {
         "\tg ..................................... continue execution until breakpoint or trap.",
     );
         println!("\th ..................................... this help.");
+        println!("\tl <$address> <path> ................... load <path> at <$address>.",);
+        println!("\tmi .................................... show memory size.",);
         println!("\tq ..................................... exit emulator.");
         println!("\tr ..................................... show registers.");
-        println!("\tp ..................................... step (execute next instruction).");
+        println!("\tp ..................................... step next instruction.");
+        println!("\ts <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.",
+        );
         println!("\tt [$address] .......................... reset (restart from given [$address], or defaults to reset vector).");
         println!("\tv <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).");
         println!("\tx <len> <$address> .................... hexdump <len> bytes at <$address>.");
@@ -392,6 +468,20 @@ impl Debugger {
                 self.cmd_show_help();
                 return Ok('*');
             }
+            // load memory
+            "l" => {
+                self.cmd_load_memory(c, it);
+                return Ok('*');
+            }
+            // show memory size
+            "mi" => {
+                let mem_size = c.bus.get_memory().get_size();
+                debug_out_text(&format!(
+                    "memory size: {} (${:04x}) bytes.",
+                    mem_size, mem_size,
+                ));
+                return Ok('*');
+            }
             // quit
             "q" => {
                 debug_out_text(&"quit!");
@@ -404,6 +494,11 @@ impl Debugger {
             }
             // step
             "p" => return Ok('p'),
+            // save memory
+            "s" => {
+                self.cmd_dump_save_memory(c, cmd, it);
+                return Ok('*');
+            }
             // reset
             "t" => {
                 self.cmd_reset(c, it);
@@ -414,8 +509,9 @@ impl Debugger {
                 self.cmd_edit_registers(c, it);
                 return Ok('*');
             }
+            // dump as hex
             "x" => {
-                self.cmd_dump(c, it);
+                self.cmd_dump_save_memory(c, cmd, it);
                 return Ok('*');
             }
             // invalid

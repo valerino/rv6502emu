@@ -71,6 +71,11 @@ pub trait Memory {
     fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError>;
 
     /**
+     * fill memory with zeroes and reset cursor to 0.
+     */
+    fn clear(&mut self);
+
+    /**
      * gets a reference to the underlying buffer.
      */
     fn as_vec(&self) -> &Vec<u8>;
@@ -133,6 +138,13 @@ impl Memory for DefaultMemory {
 
     fn get_size(&self) -> usize {
         self.size
+    }
+
+    fn clear(&mut self) {
+        let l = self.size;
+        self.cur.get_mut().clear();
+        self.cur.get_mut().resize(l, 0x0);
+        self.cur.set_position(0);
     }
 
     fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError> {
