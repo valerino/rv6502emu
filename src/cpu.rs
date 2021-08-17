@@ -486,6 +486,7 @@ impl Cpu {
                         add_extra_cycle_on_page_crossing,
                         bp_triggered == 1, // when bp_triggered = 1, only decoding is done (no exec)
                         rw_bp_triggered,
+                        false,
                     ) {
                         Ok((a, b)) => {
                             instr_size = a;

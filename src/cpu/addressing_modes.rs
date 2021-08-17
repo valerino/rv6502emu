@@ -432,8 +432,18 @@ impl AddressingMode for IndirectAddressing {
             .get_memory()
             .read_word_le((_c.regs.pc + 1) as usize)?;
 
-        // read word at address
-        let ww = _c.bus.get_memory().read_word_le(w as usize)?;
+        let ww: u16;
+        if w & 0xff == 0xff {
+            // emulate 6502 access bug on page boundary:
+            // An original 6502 has does not correctly fetch the target address if the indirect vector falls on a page boundary (e.g. $xxFF where xx is any value from $00 to $FF).
+            // In this case fetches the LSB from $xxFF as expected but takes the MSB from $xx00.
+            let lsb = _c.bus.get_memory().read_byte(w as usize)?;
+            let msb = _c.bus.get_memory().read_byte((w & 0xff00) as usize)?;
+            ww = ((msb as u16) << 8) | (lsb as u16);
+        } else {
+            // read word at address
+            ww = _c.bus.get_memory().read_word_le(w as usize)?;
+        }
 
         Ok((ww, false))
     }
