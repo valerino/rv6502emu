@@ -83,7 +83,7 @@ impl Debugger {
         c.regs.pc = addr;
         let mut instr_count: u16 = 0;
         debug_out_text(&format!(
-            "disassembling {} instructions at ${:04x}\n",
+            "disassembling (at most) {} instructions at ${:04x}\n",
             n, addr
         ));
         loop {
@@ -128,7 +128,12 @@ impl Debugger {
             }
 
             // next instruction
-            c.regs.pc = c.regs.pc.wrapping_add(instr_size as u16);
+            let (next_pc, o) = c.regs.pc.overflowing_add(instr_size as u16);
+            if o {
+                // overlap
+                break;
+            }
+            c.regs.pc = next_pc;
         }
 
         // restore pc in the end
@@ -195,7 +200,9 @@ impl Debugger {
         debug_out_text(&format!("assembling at ${:04x}, <enter> to stop.", addr));
 
         // loop
+        let mut prev_addr = addr;
         loop {
+            // read asm
             print!("?a> ${:04x}: ", addr);
             io::stdout().flush().unwrap();
             let mut full_string = String::new();
@@ -324,10 +331,15 @@ impl Debugger {
             );*/
 
             // write
-            #[allow(unused_must_use)]
             match mode_id {
                 AddressingModeId::Imp | AddressingModeId::Acc => {
-                    c.bus.get_memory().write_byte(addr as usize, op_byte);
+                    if c.bus
+                        .get_memory()
+                        .write_byte(addr as usize, op_byte)
+                        .is_err()
+                    {
+                        break;
+                    }
                     addr = addr.wrapping_add(1 as u16);
                 }
                 AddressingModeId::Abs
@@ -340,9 +352,17 @@ impl Debugger {
                             continue;
                         }
                         Ok(a) => {
-                            c.bus.get_memory().write_byte(addr as usize, op_byte);
+                            if c.bus
+                                .get_memory()
+                                .write_byte(addr as usize, op_byte)
+                                .is_err()
+                            {
+                                break;
+                            }
                             addr = addr.wrapping_add(1);
-                            c.bus.get_memory().write_word_le(addr as usize, a);
+                            if c.bus.get_memory().write_word_le(addr as usize, a).is_err() {
+                                break;
+                            }
                             addr = addr.wrapping_add(2 as u16);
                         }
                     };
@@ -360,14 +380,27 @@ impl Debugger {
                             continue;
                         }
                         Ok(a) => {
-                            c.bus.get_memory().write_byte(addr as usize, op_byte);
+                            if c.bus
+                                .get_memory()
+                                .write_byte(addr as usize, op_byte)
+                                .is_err()
+                            {
+                                break;
+                            }
                             addr = addr.wrapping_add(1);
-                            c.bus.get_memory().write_byte(addr as usize, a);
+                            if c.bus.get_memory().write_byte(addr as usize, a).is_err() {
+                                break;
+                            }
                             addr = addr.wrapping_add(1 as u16);
                         }
                     };
                 }
             };
+            if addr < prev_addr {
+                // overlap detected
+                break;
+            }
+            prev_addr = addr;
         }
     }
 }

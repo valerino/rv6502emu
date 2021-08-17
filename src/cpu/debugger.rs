@@ -186,13 +186,13 @@ impl Debugger {
         // check input
         let len_s = it.next().unwrap_or_default();
         let mem = c.bus.get_memory();
-        let num_bytes = u16::from_str_radix(&len_s, 10).unwrap_or_default();
+        let mut num_bytes = usize::from_str_radix(&len_s, 10).unwrap_or_default();
         if num_bytes == 0 {
             // set to full memory size
-            mem.get_size();
+            num_bytes = mem.get_size();
         }
         let addr_s = it.next().unwrap_or_default();
-        let addr: u16;
+        let addr: usize;
 
         // get the start address
         if addr_s.chars().next().unwrap_or_default() != '$' {
@@ -200,7 +200,7 @@ impl Debugger {
             self.cmd_invalid();
             return;
         }
-        let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+        let _ = match usize::from_str_radix(&addr_s[1..], 16) {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
@@ -238,7 +238,7 @@ impl Debugger {
         };
 
         // get the end address
-        let addr_end: u16 = addr.wrapping_add(num_bytes as u16).wrapping_sub(1);
+        let addr_end = addr.wrapping_add(num_bytes).wrapping_sub(1);
         let m_slice = &mem.as_vec()[addr as usize..=addr_end as usize];
 
         if is_save {
