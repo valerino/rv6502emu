@@ -29,7 +29,7 @@
  */
 
 use crate::cpu::cpu_error::{CpuError, CpuErrorType};
-use crate::cpu::debugger::breakpoints::{Bp, BreakpointType};
+use crate::cpu::debugger::breakpoints::BreakpointType;
 use crate::cpu::debugger::Debugger;
 use crate::cpu::{Cpu, CpuOperation};
 
@@ -195,7 +195,7 @@ impl AddressingMode for AccumulatorAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = _c.bus.get_memory().read_byte(_c.regs.pc as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x}\t\t-->\t{} A",
+            "${:04x}:\t{:02x}\t\t-->\t{} A\t[Acc])",
             _c.regs.pc,
             b,
             opcode_name.to_uppercase()
@@ -235,7 +235,7 @@ impl AddressingMode for AbsoluteAddressing {
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         let b3 = m.read_byte((_c.regs.pc.wrapping_add(2)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}\t[Abs]",
             _c.regs.pc,
             b1,
             b2,
@@ -274,7 +274,7 @@ impl AddressingMode for AbsoluteXAddressing {
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         let b3 = m.read_byte((_c.regs.pc.wrapping_add(2)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, X",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, X\t[AbX]",
             _c.regs.pc,
             b1,
             b2,
@@ -319,7 +319,7 @@ impl AddressingMode for AbsoluteYAddressing {
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         let b3 = m.read_byte((_c.regs.pc.wrapping_add(2)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, Y",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, Y\t[AbY]",
             _c.regs.pc,
             b1,
             b2,
@@ -362,7 +362,7 @@ impl AddressingMode for ImmediateAddressing {
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} #${:02x}",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} #${:02x}\t[Imm]",
             _c.regs.pc,
             b1,
             b2,
@@ -391,7 +391,7 @@ impl AddressingMode for ImpliedAddressing {
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = _c.bus.get_memory().read_byte(_c.regs.pc as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x}\t\t-->\t{}",
+            "${:04x}:\t{:02x}\t\t-->\t{}\t\t[Imp]",
             _c.regs.pc,
             b,
             opcode_name.to_uppercase()
@@ -415,7 +415,7 @@ impl AddressingMode for IndirectAddressing {
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         let b3 = m.read_byte((_c.regs.pc.wrapping_add(2)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} (${:04x})",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} (${:04x})\t[Ind]",
             _c.regs.pc,
             b1,
             b2,
@@ -461,7 +461,7 @@ impl AddressingMode for XIndirectAddressing {
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}, X)",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}, X)\t[Xin]",
             _c.regs.pc,
             b1,
             b2,
@@ -509,7 +509,7 @@ impl AddressingMode for IndirectYAddressing {
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}), Y",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}), Y\t[InY]",
             _c.regs.pc,
             b1,
             b2,
@@ -558,7 +558,7 @@ impl AddressingMode for RelativeAddressing {
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[Rel]",
             _c.regs.pc,
             b1,
             b2,
@@ -600,7 +600,7 @@ impl AddressingMode for ZeroPageAddressing {
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[Zpg]",
             _c.regs.pc,
             b1,
             b2,
@@ -639,7 +639,7 @@ impl AddressingMode for ZeroPageXAddressing {
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, X",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, X\t[ZpX]",
             _c.regs.pc,
             b1,
             b2,
@@ -680,7 +680,7 @@ impl AddressingMode for ZeroPageYAddressing {
         let b1 = m.read_byte(_c.regs.pc as usize)?;
         let b2 = m.read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, Y",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, Y\t[ZpY]",
             _c.regs.pc,
             b1,
             b2,

@@ -41,11 +41,14 @@ use ::function_name::named;
 use lazy_static::*;
 
 /**
- * holds opcode information for assembler/diassembler
+ * holds opcode information for assembler/disassembler
  */
 #[derive(Clone, Debug, Copy)]
 pub(crate) struct OpcodeMarker {
+    /// opcode name
     pub(crate) name: &'static str,
+
+    /// addressing mode
     pub(crate) id: AddressingModeId,
 }
 
@@ -61,6 +64,11 @@ lazy_static! {
      *
      * (< fn(c: &mut Cpu, d: &Debugger, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool, rw_bp_triggered: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, d: &Debugger, in_cycles: usize, add_extra_cycle:bool) >)
      *
+     * most of the info taken from :
+     *
+     * - https://www.masswerk.at/6502/6502_instruction_set.html#SHA
+     * - https://problemkaputt.de/2k6specs.htm#cpu65xxmicroprocessor
+     * - http://www.oxyron.de/html/opcodes02.html
      */
     pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: &Debugger, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool, rw_bp_triggered: bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
         vec![
@@ -234,8 +242,15 @@ fn ahx<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get msb from target address
+    let mut h = (tgt >> 8) as u8;
 
+    // A & X & (H + 1)
+    // https://problemkaputt.de/2k6specs.htm#cpu65xxmicroprocessor
+    let res = c.regs.a & c.regs.x & h.wrapping_add(1);
+
+    // store
+    A::store(c, d, tgt, rw_bp_triggered, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
