@@ -28,13 +28,13 @@
  * SOFTWARE.
  */
 
+use crate::cpu::addressing_modes;
 use crate::cpu::addressing_modes::AddressingModeId::*;
-use crate::cpu::addressing_modes::RelativeAddressing;
 use crate::cpu::addressing_modes::*;
 use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuError;
 use crate::cpu::debugger::Debugger;
-use crate::cpu::Cpu;
+use crate::cpu::{Cpu, Vectors};
 use crate::utils;
 use crate::utils::*;
 use ::function_name::named;
@@ -69,6 +69,7 @@ lazy_static! {
      * - https://www.masswerk.at/6502/6502_instruction_set.html#SHA
      * - https://problemkaputt.de/2k6specs.htm#cpu65xxmicroprocessor
      * - http://www.oxyron.de/html/opcodes02.html
+     * - http://www.obelisk.me.uk/6502/reference.html
      */
     pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: &Debugger, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool, rw_bp_triggered: bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
         vec![
@@ -170,9 +171,33 @@ lazy_static! {
             ];
 }
 
+/**
+ * helper to set Z and N flags in one shot, depending on val
+ */
+fn set_zn_flags(c: &mut Cpu, val: u8) {
+    c.set_zero_flag(val == 0);
+    c.set_negative_flag(utils::is_signed(val));
+}
+
 #[named]
 /**
- * ADC implementation converted from c code, taken from https://github.com/DavidBuchanan314/6502-emu/blob/master/6502.c
+ * ADC - Add with Carry
+ * A,Z,C,N = A+M+C
+ *
+ * This instruction adds the contents of a memory location to the accumulator together with the carry bit.
+ * If overflow occurs the carry bit is set, this enables multiple byte addition to be performed.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Set if overflow in bit 7
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Set if sign bit is incorrect
+ * N	Negative Flag	Set if bit 7 set
+ *
+ * ADC implementation (including decimal mode support) converted from c code, taken from https://github.com/DavidBuchanan314/6502-emu/blob/master/6502.c
  */
 fn adc<A: AddressingMode>(
     c: &mut Cpu,
@@ -220,11 +245,13 @@ fn adc<A: AddressingMode>(
     let o = ((c.regs.a as u16) ^ sum) & ((b as u16) ^ sum) & 0x80;
     c.set_overflow_flag(o != 0);
     c.regs.a = (sum & 0xff) as u8;
-    c.set_zero_flag(c.regs.a == 0);
-    c.set_negative_flag(utils::is_signed(c.regs.a));
+    set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * undoc
+ */
 #[named]
 fn ahx<A: AddressingMode>(
     c: &mut Cpu,
@@ -236,6 +263,7 @@ fn ahx<A: AddressingMode>(
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+
     debug_out_opcode::<A>(c, function_name!())?;
     if decode_only {
         // perform decode only, no execution
@@ -243,10 +271,9 @@ fn ahx<A: AddressingMode>(
     }
 
     // get msb from target address
-    let mut h = (tgt >> 8) as u8;
+    let h = (tgt >> 8) as u8;
 
     // A & X & (H + 1)
-    // https://problemkaputt.de/2k6specs.htm#cpu65xxmicroprocessor
     let res = c.regs.a & c.regs.x & h.wrapping_add(1);
 
     // store
@@ -254,6 +281,9 @@ fn ahx<A: AddressingMode>(
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * undoc
+ */
 #[named]
 fn alr<A: AddressingMode>(
     c: &mut Cpu,
@@ -270,11 +300,22 @@ fn alr<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+
+    // set carry flag with bit to be shifted out
+    c.set_carry_flag(c.regs.a & 1 != 0);
+
+    // A:=(A&#{imm})/2
+    c.regs.a = (c.regs.a & b) >> 1;
+    set_zn_flags(c, c.regs.a);
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * undoc
+ */
 #[named]
 fn anc<A: AddressingMode>(
     c: &mut Cpu,
@@ -291,11 +332,36 @@ fn anc<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+
+    // A:=A&#{imm}
+    c.regs.a = c.regs.a & b;
+    set_zn_flags(c, c.regs.a);
+
+    // note to ANC: this command performs an AND operation only, but bit 7 is put into the carry, as if the ASL/ROL would have been executed.
+    c.set_carry_flag(utils::is_signed(c.regs.a));
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * AND - Logical AND
+ *
+ * A,Z,N = A&M
+ *
+ * A logical AND is performed, bit by bit, on the accumulator contents using the contents of a byte of memory.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N    Negative Flag	Set if bit 7 set
+ */
 #[named]
 fn and<A: AddressingMode>(
     c: &mut Cpu,
@@ -311,11 +377,20 @@ fn and<A: AddressingMode>(
         // perform decode only, no execution
         return Ok((A::len(), 0));
     }
-    panic!("*** NOT IMPLEMENTED ***");
 
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+
+    // A AND M -> A
+    c.regs.a = c.regs.a & b;
+
+    set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * undoc
+ */
 #[named]
 fn arr<A: AddressingMode>(
     c: &mut Cpu,
@@ -332,11 +407,52 @@ fn arr<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+
+    // A:=(A&#{imm})/2
+
+    // perform and
+    c.regs.a = c.regs.a & b;
+
+    // handle overflow flag
+    let add = c.regs.a as usize + b as usize + b as usize;
+    c.set_overflow_flag(add > 0xff);
+
+    // ror
+    c.regs.a = c.regs.a >> 1;
+
+    // swap carry and bit 7 of A
+    let previous_c: bool = c.is_carry_set();
+    let previous_bit7 = utils::is_signed(c.regs.a);
+    c.set_carry_flag(previous_bit7);
+    if previous_c {
+        c.regs.a |= 0x80;
+    }
+
+    set_zn_flags(c, c.regs.a);
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * ASL - Arithmetic Shift Left
+ *
+ * A,Z,C,N = M*2 or M,Z,C,N = M*2
+ *
+ * This operation shifts all the bits of the accumulator or memory contents one bit left. Bit 0 is set to 0 and bit 7 is placed in the carry flag.
+ * The effect of this operation is to multiply the memory contents by 2 (ignoring 2's complement considerations), setting the carry if the result will not fit in 8 bits.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Set to contents of old bit 7
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of the result is set
+ */
 #[named]
 fn asl<A: AddressingMode>(
     c: &mut Cpu,
@@ -353,11 +469,23 @@ fn asl<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+    c.set_carry_flag(utils::is_signed(b));
 
+    // shl
+    b <<= 1;
+    c.set_zero_flag(c.regs.a == 0);
+    c.set_negative_flag(utils::is_signed(b));
+
+    // store back
+    A::store(c, d, tgt, rw_bp_triggered, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * undoc
+ */
 #[named]
 fn axs<A: AddressingMode>(
     c: &mut Cpu,
@@ -374,11 +502,34 @@ fn axs<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
+    // X:=A&X-#{imm}
+    c.regs.x = (c.regs.a & c.regs.x).wrapping_sub(b);
+
+    // note to AXS: performs CMP and DEX at the same time, so that the MINUS sets the flag like CMP, not SBC.
+    c.set_carry_flag(c.regs.x >= b);
+    c.set_zero_flag(c.regs.a == b);
+    c.set_negative_flag(utils::is_signed(c.regs.x));
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * BCC - Branch if Carry Clear
+ *
+ * If the carry flag is clear then add the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn bcc<A: AddressingMode>(
     c: &mut Cpu,
@@ -395,10 +546,41 @@ fn bcc<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // branch
+    let mut cycles = in_cycles;
+    let mut taken: bool = false;
+    if !c.is_carry_set() {
+        // branch is taken, add another cycle
+        cycles += 1;
+        taken = true;
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        c.regs.pc = new_pc;
+    }
+
+    Ok((
+        if taken { 0 } else { A::len() },
+        cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
+
+/**
+ * BCS - Branch if Carry Set
+ *
+ * If the carry flag is set then add the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 
 #[named]
 fn bcs<A: AddressingMode>(
@@ -416,11 +598,41 @@ fn bcs<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // branch
+    let mut cycles = in_cycles;
+    let mut taken: bool = false;
+    if c.is_carry_set() {
+        // branch is taken, add another cycle
+        cycles += 1;
+        taken = true;
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        c.regs.pc = new_pc;
+    }
+
+    Ok((
+        if taken { 0 } else { A::len() },
+        cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
+/**
+ * BEQ - Branch if Equal
+ *
+ * If the zero flag is set then add the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn beq<A: AddressingMode>(
     c: &mut Cpu,
@@ -437,11 +649,46 @@ fn beq<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // branch
+    let mut cycles = in_cycles;
+    let mut taken: bool = false;
+    if c.is_zero_set() {
+        // branch is taken, add another cycle
+        cycles += 1;
+        taken = true;
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        c.regs.pc = new_pc;
+    }
+
+    Ok((
+        if taken { 0 } else { A::len() },
+        cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
+/**
+ * BIT - Bit Test
+ *
+ * A & M, N = M7, V = M6
+ *
+ * This instructions is used to test if one or more bits are set in a target memory location.
+ * The mask pattern in A is ANDed with the value in memory to set or clear the zero flag, but the result is not kept.
+ *
+ * Bits 7 and 6 of the value from memory are copied into the N and V flags.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if the result of the AND is zero
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Set to bit 6 of the memory value
+ * N	Negative Flag	Set to bit 7 of the memory value
+ */
 #[named]
 fn bit<A: AddressingMode>(
     c: &mut Cpu,
@@ -458,11 +705,32 @@ fn bit<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
+    let and_res = c.regs.a & b;
+
+    c.set_zero_flag(and_res == 0);
+    c.set_negative_flag(utils::is_signed(b));
+    c.set_overflow_flag(b & 0b01000000 != 0);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * BMI - Branch if Minus
+ *
+ * If the negative flag is set then add the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn bmi<A: AddressingMode>(
     c: &mut Cpu,
@@ -479,11 +747,40 @@ fn bmi<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // branch
+    let mut cycles = in_cycles;
+    let mut taken: bool = false;
+    if c.is_negative_set() {
+        // branch is taken, add another cycle
+        cycles += 1;
+        taken = true;
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        c.regs.pc = new_pc;
+    }
+    Ok((
+        if taken { 0 } else { A::len() },
+        cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
+/**
+ * BNE - Branch if Not Equal
+ *
+ * If the zero flag is clear then add the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn bne<A: AddressingMode>(
     c: &mut Cpu,
@@ -500,11 +797,41 @@ fn bne<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // branch
+    let mut cycles = in_cycles;
+    let mut taken: bool = false;
+    if !c.is_zero_set() {
+        // branch is taken, add another cycle
+        cycles += 1;
+        taken = true;
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        c.regs.pc = new_pc;
+    }
+
+    Ok((
+        if taken { 0 } else { A::len() },
+        cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
+/**
+ * BPL - Branch if Positive
+ *
+ * If the negative flag is clear then add the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn bpl<A: AddressingMode>(
     c: &mut Cpu,
@@ -521,19 +848,48 @@ fn bpl<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // branch
+    let mut cycles = in_cycles;
+    let mut taken: bool = false;
+    if !c.is_negative_set() {
+        // branch is taken, add another cycle
+        cycles += 1;
+        taken = true;
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        c.regs.pc = new_pc;
+    }
+
+    Ok((
+        if taken { 0 } else { A::len() },
+        cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
+/**
+ * BRK - Force Interrupt
+ *
+ * The BRK instruction forces the generation of an interrupt request.
+ * The program counter and processor status are pushed on the stack then the IRQ interrupt vector at $FFFE/F is loaded into the PC and the break flag in the status set to one.
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Set to 1
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn brk<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     debug_out_opcode::<A>(c, function_name!())?;
@@ -542,11 +898,36 @@ fn brk<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // push pc and p on stack
+    let mem = c.bus.get_memory();
+    mem.write_word_le(0x100 + c.regs.s as usize, c.regs.pc)?;
+    c.regs.s = c.regs.s.wrapping_sub(2);
+    mem.write_byte(0x100 + c.regs.s as usize, c.regs.p)?;
+    c.regs.s = c.regs.s.wrapping_sub(1);
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // set break flag
+    c.set_break_flag(true);
+
+    // set pc to irq
+    c.regs.pc = Vectors::IRQ as u16;
+    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * BVC - Branch if Overflow Clear
+ *
+ * If the overflow flag is clear then add the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn bvc<A: AddressingMode>(
     c: &mut Cpu,
@@ -563,11 +944,41 @@ fn bvc<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // branch
+    let mut cycles = in_cycles;
+    let mut taken: bool = false;
+    if !c.is_overflow_set() {
+        // branch is taken, add another cycle
+        cycles += 1;
+        taken = true;
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        c.regs.pc = new_pc;
+    }
+
+    Ok((
+        if taken { 0 } else { A::len() },
+        cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
+/**
+ * BVS - Branch if Overflow Set
+ *
+ * If the overflow flag is set then add the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn bvs<A: AddressingMode>(
     c: &mut Cpu,
@@ -584,19 +995,49 @@ fn bvs<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get value
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // branch
+    let mut cycles = in_cycles;
+    let mut taken: bool = false;
+    if c.is_overflow_set() {
+        // branch is taken, add another cycle
+        cycles += 1;
+        taken = true;
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        c.regs.pc = new_pc;
+    }
+
+    Ok((
+        if taken { 0 } else { A::len() },
+        cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
+/**
+ * CLC - Clear Carry Flag
+ *
+ * C = 0
+ *
+ * Set the carry flag to zero.
+ *
+ * C	Carry Flag	Set to 0
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn clc<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     debug_out_opcode::<A>(c, function_name!())?;
@@ -610,14 +1051,29 @@ fn clc<A: AddressingMode>(
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * CLD - Clear Decimal Mode
+ *
+ * D = 0
+ *
+ * Sets the decimal mode flag to zero.
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Set to 0
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn cld<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     debug_out_opcode::<A>(c, function_name!())?;
@@ -1388,10 +1844,27 @@ fn sax<A: AddressingMode>(
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
-#[named]
 /**
+ * SBC - Subtract with Carry
+ *
+ * A,Z,C,N = A-M-(1-C)
+ *
+ * This instruction subtracts the contents of a memory location to the accumulator together with the not of the carry bit.
+ * If overflow occurs the carry bit is clear, this enables multiple byte subtraction to be performed.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Clear if overflow in bit 7
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Set if sign bit is incorrect
+ * N	Negative Flag	Set if bit 7 set
+ *
  * SBC implementation converted from c code, taken from https://github.com/DavidBuchanan314/6502-emu/blob/master/6502.c
  */
+#[named]
 fn sbc<A: AddressingMode>(
     c: &mut Cpu,
     d: &Debugger,
@@ -1422,7 +1895,7 @@ fn sbc<A: AddressingMode>(
         let mut lo: u8 = (c.regs.a & 0x0f)
             .wrapping_sub(b & 0x0f)
             .wrapping_sub(1)
-            .wrapping_add(c.is_carry_set());
+            .wrapping_add(c.is_carry_set() as u8);
         let mut hi: u8 = (c.regs.a >> 4).wrapping_sub(b >> 4);
         if lo & 0x10 != 0 {
             lo = lo.wrapping_sub(6);

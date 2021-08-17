@@ -320,14 +320,35 @@ impl Cpu {
     }
 
     /**
-     * returns 1 if the carry flag is set
+     * checks if the Z flag is set
      */
-    pub(crate) fn is_carry_set(&self) -> u8 {
+    pub(crate) fn is_carry_set(&self) -> bool {
         let p = CpuFlags::from_bits(self.regs.p).unwrap();
-        if p.contains(CpuFlags::C) {
-            return 1;
-        }
-        0
+        p.contains(CpuFlags::C)
+    }
+
+    /**
+     * checks if the Z flag is set
+     */
+    pub(crate) fn is_zero_set(&self) -> bool {
+        let p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.contains(CpuFlags::Z)
+    }
+
+    /**
+     * checks if the N flag is set
+     */
+    pub(crate) fn is_negative_set(&self) -> bool {
+        let p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.contains(CpuFlags::N)
+    }
+
+    /**
+     * checks if the V flag is set
+     */
+    pub(crate) fn is_overflow_set(&self) -> bool {
+        let p = CpuFlags::from_bits(self.regs.p).unwrap();
+        p.contains(CpuFlags::V)
     }
 
     /**

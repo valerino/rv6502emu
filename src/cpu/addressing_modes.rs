@@ -173,7 +173,7 @@ fn is_page_cross(src_addr: u16, dst_addr: u16) -> bool {
 /**
  * get branch target for relative addressing, returns tuple with (new_pc_address, add_extra_cycle)
  */
-fn get_relative_branch_target(src_pc: u16, branch_offset: u16) -> (u16, bool) {
+pub(crate) fn get_relative_branch_target(src_pc: u16, branch_offset: u16) -> (u16, bool) {
     let signed_offset = branch_offset & 0x7f;
     let new_pc: u16;
     if branch_offset <= 127 {
@@ -375,10 +375,7 @@ impl AddressingMode for ImmediateAddressing {
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
-        let w = _c
-            .bus
-            .get_memory()
-            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
+        let w = _c.regs.pc.wrapping_add(1);
         Ok((w as u16, false))
     }
 }
@@ -571,14 +568,10 @@ impl AddressingMode for RelativeAddressing {
         _c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
-        // this is the offset to be added (signed) to PC
-        let w = _c
-            .bus
-            .get_memory()
-            .read_byte((_c.regs.pc.wrapping_add(1)) as usize)?;
+        let w = _c.regs.pc.wrapping_add(1);
 
         // this will check for page crossing too (check mandatory in relative addressing)
-        let (_, cross) = get_relative_branch_target(_c.regs.pc, w as u16);
+        let (_, cross) = get_relative_branch_target(_c.regs.pc, w);
         Ok((w as u16, cross))
     }
 }
