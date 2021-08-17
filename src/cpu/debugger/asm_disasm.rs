@@ -113,7 +113,7 @@ impl Debugger {
                 Ok(()) => (),
             };
             // decode
-            match opcode_f(c, 0, false, true) {
+            match opcode_f(c, self, 0, false, true, false) {
                 Err(e) => {
                     debug_out_text(&e);
                     break;

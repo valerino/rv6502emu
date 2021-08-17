@@ -44,6 +44,8 @@ pub enum ErrorType {
     MemoryLoad,
     /// invalid instruction.
     InvalidOpcode,
+    /// read/write breakpoint hit.
+    RwBreakpoint,
 }
 pub type CpuErrorType = self::ErrorType;
 
@@ -54,6 +56,7 @@ impl std::fmt::Display for ErrorType {
             ErrorType::MemoryWrite => write!(f, "MemWrite"),
             ErrorType::MemoryLoad => write!(f, "MemLoad"),
             ErrorType::InvalidOpcode => write!(f, "InvalidOpcode"),
+            ErrorType::RwBreakpoint => write!(f, "RW Breakpoint"),
         }
     }
 }
@@ -63,11 +66,18 @@ impl std::fmt::Display for ErrorType {
  */
 #[derive(Debug)]
 pub struct Error {
+    /// one of the defined ErrorType enums.
     pub operation: ErrorType,
-    address: usize,
-    access_size: usize,
-    mem_size: usize,
-    msg: Option<String>,
+    /// error address.
+    pub address: usize,
+    /// read/write requested access size which caused the error.\
+    pub access_size: usize,
+    /// whole memory size.
+    pub mem_size: usize,
+    /// the breakpoint index which triggered, if operation is RwBreakpoint
+    pub bp_idx: i8,
+    /// an optional message.
+    pub msg: Option<String>,
 }
 pub type CpuError = self::Error;
 
@@ -84,6 +94,8 @@ impl std::fmt::Display for CpuError {
             )
         } else if self.operation == ErrorType::InvalidOpcode {
             write!(f, "Error ({})", self.operation,)
+        } else if self.operation == ErrorType::RwBreakpoint {
+            write!(f, "Error ({}), bp index={}", self.operation, self.bp_idx)
         } else {
             write!(
                 f,
@@ -101,6 +113,7 @@ impl From<std::io::Error> for CpuError {
             address: 0,
             mem_size: 0,
             access_size: 0,
+            bp_idx: 0,
             msg: Some(err.to_string()),
         };
         e
@@ -116,6 +129,7 @@ pub(crate) fn new_invalid_opcode_error(address: usize) -> CpuError {
         address: address,
         mem_size: 0,
         access_size: 0,
+        bp_idx: 0,
         msg: None,
     };
     return e;
@@ -140,6 +154,7 @@ pub(crate) fn check_address_boundaries(
             address: address,
             mem_size: mem_size,
             access_size: access_size,
+            bp_idx: 0,
             msg: msg,
         };
         return Err(e);

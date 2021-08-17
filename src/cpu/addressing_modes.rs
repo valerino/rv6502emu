@@ -28,7 +28,9 @@
  * SOFTWARE.
  */
 
-use crate::cpu::cpu_error::CpuError;
+use crate::cpu::cpu_error::{CpuError, CpuErrorType};
+use crate::cpu::debugger::breakpoints::{Bp, BreakpointType};
+use crate::cpu::debugger::Debugger;
 use crate::cpu::{Cpu, CpuOperation};
 
 /**
@@ -83,8 +85,34 @@ pub(crate) trait AddressingMode {
     /**
      * load byte from address
      */
-    fn load(c: &mut Cpu, address: u16) -> Result<u8, CpuError> {
+    fn load(
+        c: &mut Cpu,
+        d: &Debugger,
+        address: u16,
+        rw_bp_triggered: bool,
+    ) -> Result<u8, CpuError> {
         let m = c.bus.get_memory();
+
+        // check if a breakpoint has to be triggered (if not triggered before)
+        if !rw_bp_triggered {
+            match d.has_enabled_breakpoint(address, BreakpointType::READ) {
+                Some(idx) => {
+                    // trigger!
+                    let e = CpuError {
+                        operation: CpuErrorType::RwBreakpoint,
+                        address: address as usize,
+                        mem_size: 0,
+                        access_size: 1,
+                        bp_idx: idx,
+                        msg: None,
+                    };
+                    return Err(e);
+                }
+                None => (),
+            };
+        }
+
+        // read
         let b = m.read_byte(address as usize)?;
 
         // call callback if any
@@ -95,8 +123,35 @@ pub(crate) trait AddressingMode {
     /**
      * store byte to address
      */
-    fn store(c: &mut Cpu, address: u16, b: u8) -> Result<(), CpuError> {
+    fn store(
+        c: &mut Cpu,
+        d: &Debugger,
+        address: u16,
+        rw_bp_triggered: bool,
+        b: u8,
+    ) -> Result<(), CpuError> {
         let m = c.bus.get_memory();
+
+        // check if a breakpoint has to be triggered (if not triggered before)
+        if !rw_bp_triggered {
+            match d.has_enabled_breakpoint(address, BreakpointType::WRITE) {
+                Some(idx) => {
+                    // trigger!
+                    let e = CpuError {
+                        operation: CpuErrorType::RwBreakpoint,
+                        address: address as usize,
+                        mem_size: 0,
+                        access_size: 1,
+                        bp_idx: idx,
+                        msg: None,
+                    };
+                    return Err(e);
+                }
+                None => (),
+            };
+        }
+
+        // write
         m.write_byte(address as usize, b)?;
 
         // call callback if any
@@ -155,10 +210,10 @@ impl AddressingMode for AccumulatorAddressing {
         Ok((0, false))
     }
 
-    fn load(c: &mut Cpu, _: u16) -> Result<u8, CpuError> {
+    fn load(c: &mut Cpu, _: &Debugger, _: u16, _: bool) -> Result<u8, CpuError> {
         Ok(c.regs.a)
     }
-    fn store(c: &mut Cpu, _: u16, b: u8) -> Result<(), CpuError> {
+    fn store(c: &mut Cpu, _: &Debugger, _: u16, _: bool, b: u8) -> Result<(), CpuError> {
         c.regs.a = b;
         Ok(())
     }

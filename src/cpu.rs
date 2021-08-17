@@ -415,6 +415,7 @@ impl Cpu {
 
         // loop
         let mut bp_triggered: i8 = 0;
+        let mut rw_bp_triggered = false;
         'interpreter: loop {
             // fetch an instruction
             let b = self.fetch()?;
@@ -441,37 +442,56 @@ impl Cpu {
                     };
 
                     // check if we have a breakpoint at pc
+                    let mut bp_idx = 0;
+                    println!("bptrig={}", bp_triggered);
                     if bp_triggered == 0 {
-                        let bp_idx: i8;
                         match dbg.has_enabled_breakpoint(self.regs.pc, BreakpointType::EXEC) {
                             None => (),
                             Some(idx) => {
                                 bp_triggered = 1;
                                 bp_idx = idx;
-                                debug_out_text(&format!("breakpoint {} triggered!", bp_idx));
-                                // stop 'g' command, if any
                                 dbg.going = false;
                             }
                         };
                     }
 
                     // execute (or just decode, if breakpoint is set)
-                    let instr_size: i8;
-                    let elapsed: usize;
+                    let mut instr_size: i8 = 0;
+                    let mut elapsed: usize = 0;
                     let _ = match opcode_f(
                         self,
+                        &dbg,
                         opcode_cycles,
                         add_extra_cycle_on_page_crossing,
                         bp_triggered == 1, // when bp_triggered = 1, only decoding is done (no exec)
+                        rw_bp_triggered,
                     ) {
                         Ok((a, b)) => {
                             instr_size = a;
                             elapsed = b;
+                            if bp_triggered == 1 {
+                                debug_out_text(&format!("EXEC breakpoint {} triggered!", bp_idx));
+                            }
+                            if rw_bp_triggered {
+                                rw_bp_triggered = false;
+                            }
                         }
                         Err(e) => {
-                            // TODO: handle with debugger if attached
-                            debug_out_text(&e);
-                            break;
+                            if bp_triggered == 0 && e.operation == CpuErrorType::RwBreakpoint {
+                                // an r/w breakpoint has triggered, opcode has not executed.
+                                debug_out_text(&format!("R/W breakpoint {} triggered!", e.bp_idx));
+                                rw_bp_triggered = true;
+                                bp_triggered = 1;
+                                dbg.going = false;
+
+                                // disable to avoid it trigger in the next step
+                            } else {
+                                if e.operation != CpuErrorType::RwBreakpoint {
+                                    // report error and break
+                                    debug_out_text(&e);
+                                    break;
+                                }
+                            }
                         }
                     };
 
@@ -481,11 +501,13 @@ impl Cpu {
                         self.cycles = self.cycles.wrapping_add(elapsed);
                         bp_triggered = 0;
                     } else {
+                        // bp_triggered was 1 (a breakpoint has just hit)
                         bp_triggered = 2;
                     }
                     if cycles != 0 && elapsed >= cycles {
                         break 'interpreter;
                     }
+                    println!("loop done, at_end_bptrig={}", bp_triggered);
                 }
                 'q' => {
                     // gracefully exit
