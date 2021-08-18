@@ -1,22 +1,20 @@
 # rv6502emu
 
-my toy MOS6502 cpu emulator implemented as a rust crate.
+my toy MOS6502 cpu emulator + debugger implemented as a rust crate.
 
 > this is my testbed for learning rust, so please sorry if the code is extremely pedantic, probably overengineered (i.e. the [Bus](./src/bus.rs) and [Memory](./src/memory.rs) traits, for instance, made as such to be extensible when used in a console/computer emulator), and most important **may be implemented in a non-idiomatic way due to my current newbieness in rust :)**.<br><br>
 said that, **please note that everything (except implementation errors, of course!) is intentional**: i'm trying to experiment with different features of Rust to get a better hold of it and improve my skills.<br><br>
-hopefully this will work too once finished, i plan to use it for a rust-based Atari2600 emulator :)
+hopefully this works too, i plan to use it for a rust-based Atari2600 emulator :)
 
 ## features
 
-- full featured debugger: ~90% (_command-line only currently_)
-- undocumented opcodes: ~100%
+- full featured debugger: 100% (_command-line only currently_)
+- undocumented opcodes: 100%
 - disassembler : 100%
 - assembler : 100%
-- emulator : 40%
+- emulator : 100%
 
 ## usage
-
-the api **is still wip** and currently support:
 
 ~~~
     /**
@@ -68,20 +66,21 @@ debugger supported commands:
         e <$value> [$value...] <$address> ..... write one or more <$value> bytes in memory starting at <$address>.
         g ..................................... continue execution until breakpoint or trap.
         h ..................................... this help.
+        l <$address> <path> ................... load <path> at <$address>.
+        mi .................................... show memory size.
         q ..................................... exit emulator.
         r ..................................... show registers.
-        p ..................................... step (execute next instruction).
+        p ..................................... step next instruction.
+        s <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.
         t [$address] .......................... reset (restart from given [$address], or defaults to reset vector).
         v <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).
         x <len> <$address> .................... hexdump <len> bytes at <$address>.
 ~~~
 
-most of the features are currently to be considered WIP... still keep the faith :love_you_gesture:
-
 ~~~bash
 git clone <thisrepo> --recurse-submodules
 
-# will run the debugger test program
+# will run the debugger cli
 cargo run
 ~~~
 

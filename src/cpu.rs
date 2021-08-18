@@ -217,7 +217,7 @@ pub struct Cpu {
 
 impl Cpu {
     /**
-     * activate logging on stdout through env_logger (max level)
+     * activate logging on stdout through env_logger (max level).
      */
     pub fn enable_logging(&self, enable: bool) {
         if enable == true {
@@ -234,7 +234,7 @@ impl Cpu {
     }
 
     /**
-     * call installed cpu callback if any
+     * call installed cpu callback if any.
      */
     pub(crate) fn call_callback(&mut self, address: u16, value: u8, op: CpuOperation) {
         if self.cb.is_some() {
@@ -249,106 +249,22 @@ impl Cpu {
     }
 
     /**
-     * set/unset the carry flag
+     * check if cpu flag is set
      */
-    pub(crate) fn set_carry_flag(&mut self, set: bool) {
+    pub(crate) fn is_cpu_flag_set(&self, f: CpuFlags) -> bool {
+        if CpuFlags::from_bits(self.regs.p).unwrap().contains(f) {
+            return true;
+        }
+        false
+    }
+
+    /**
+     * set/unset cpu flag
+     */
+    pub(crate) fn set_cpu_flags(&mut self, f: CpuFlags, enable: bool) {
         let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.set(CpuFlags::C, set);
+        p.set(f, enable);
         self.regs.p = p.bits();
-    }
-
-    /**
-     * set/unset the negative flag
-     */
-    pub(crate) fn set_negative_flag(&mut self, set: bool) {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.set(CpuFlags::N, set);
-        self.regs.p = p.bits();
-    }
-
-    /**
-     * set/unset the overflow flag
-     */
-    pub(crate) fn set_overflow_flag(&mut self, set: bool) {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.set(CpuFlags::V, set);
-        self.regs.p = p.bits();
-    }
-
-    /**
-     * set/unset the zero flag
-     */
-    pub(crate) fn set_zero_flag(&mut self, set: bool) {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.set(CpuFlags::Z, set);
-        self.regs.p = p.bits();
-    }
-
-    /**
-     * set/unset the decimal flag
-     */
-    pub(crate) fn set_decimal_flag(&mut self, set: bool) {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.set(CpuFlags::D, set);
-        self.regs.p = p.bits();
-    }
-
-    /**
-     * set/unset the interrupt disable flag
-     */
-    pub(crate) fn set_interrupt_disable_flag(&mut self, set: bool) {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.set(CpuFlags::I, set);
-        self.regs.p = p.bits();
-    }
-
-    /**
-     * set/unset the break flag
-     */
-    pub(crate) fn set_break_flag(&mut self, set: bool) {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.set(CpuFlags::B, set);
-        self.regs.p = p.bits();
-    }
-
-    /**
-     * check if the D flag is set
-     */
-    pub(crate) fn is_decimal_set(&self) -> bool {
-        let p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.contains(CpuFlags::D)
-    }
-
-    /**
-     * checks if the Z flag is set
-     */
-    pub(crate) fn is_carry_set(&self) -> bool {
-        let p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.contains(CpuFlags::C)
-    }
-
-    /**
-     * checks if the Z flag is set
-     */
-    pub(crate) fn is_zero_set(&self) -> bool {
-        let p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.contains(CpuFlags::Z)
-    }
-
-    /**
-     * checks if the N flag is set
-     */
-    pub(crate) fn is_negative_set(&self) -> bool {
-        let p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.contains(CpuFlags::N)
-    }
-
-    /**
-     * checks if the V flag is set
-     */
-    pub(crate) fn is_overflow_set(&self) -> bool {
-        let p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.contains(CpuFlags::V)
     }
 
     /**
@@ -384,6 +300,7 @@ impl Cpu {
 
     /**
      * resets the cpu setting all registers to the initial values.
+     *
      * http://forum.6502.org/viewtopic.php?p=2959
      */
     pub fn reset(&mut self, start_address: Option<u16>) -> Result<(), CpuError> {
@@ -543,12 +460,32 @@ impl Cpu {
     }
 
     /**
+     * internal, triggers irq or nmi
+     */
+    fn irq_nmi(&mut self, v: u16) -> Result<(), CpuError> {
+        // push pc and p on stack
+        opcodes::push_word_le(self, self.regs.pc)?;
+        opcodes::push_byte(self, self.regs.p)?;
+
+        // clear break flag
+        self.set_cpu_flags(CpuFlags::B, false);
+
+        // set pc to vector
+        self.regs.pc = v;
+        Ok(())
+    }
+
+    /**
      * triggers an irq.
      */
-    pub fn irq(&mut self) {}
+    pub fn irq(&mut self) -> Result<(), CpuError> {
+        self.irq_nmi(Vectors::IRQ as u16)
+    }
 
     /**
      * triggers an nmi.
      */
-    pub fn nmi(&mut self) {}
+    pub fn nmi(&mut self) -> Result<(), CpuError> {
+        self.irq_nmi(Vectors::NMI as u16)
+    }
 }

@@ -34,6 +34,7 @@ use crate::cpu::addressing_modes::*;
 use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuError;
 use crate::cpu::debugger::Debugger;
+use crate::cpu::CpuFlags;
 use crate::cpu::{Cpu, Vectors};
 use crate::utils;
 use crate::utils::*;
@@ -64,12 +65,13 @@ lazy_static! {
      *
      * (< fn(c: &mut Cpu, d: &Debugger, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool, rw_bp_triggered: bool, quiet: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, d: &Debugger, in_cycles: usize, add_extra_cycle:bool) >)
      *
-     * most of the info taken from :
+     * all the opcodes info are taken from, in no particular order :
      *
-     * - https://www.masswerk.at/6502/6502_instruction_set.html#SHA
+     * - https://www.masswerk.at/6502/6502_instruction_set.html
      * - https://problemkaputt.de/2k6specs.htm#cpu65xxmicroprocessor
      * - http://www.oxyron.de/html/opcodes02.html
      * - http://www.obelisk.me.uk/6502/reference.html
+     * - [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
      */
     pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: &Debugger, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool, rw_bp_triggered: bool, quiet: bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
         vec![
@@ -175,14 +177,14 @@ lazy_static! {
  * helper to set Z and N flags in one shot, depending on val
  */
 fn set_zn_flags(c: &mut Cpu, val: u8) {
-    c.set_zero_flag(val == 0);
-    c.set_negative_flag(utils::is_signed(val));
+    c.set_cpu_flags(CpuFlags::Z, val == 0);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(val));
 }
 
 /**
  * push word on the stack
  */
-fn push_word_le(c: &mut Cpu, w: u16) -> Result<(), CpuError> {
+pub(super) fn push_word_le(c: &mut Cpu, w: u16) -> Result<(), CpuError> {
     let mem = c.bus.get_memory();
     mem.write_word_le(0x100 + c.regs.s as usize, w)?;
     c.regs.s = c.regs.s.wrapping_sub(2);
@@ -190,13 +192,33 @@ fn push_word_le(c: &mut Cpu, w: u16) -> Result<(), CpuError> {
 }
 
 /**
- * push word on the stack
+ * push byte on the stack
  */
-fn push_byte(c: &mut Cpu, b: u8) -> Result<(), CpuError> {
+pub(super) fn push_byte(c: &mut Cpu, b: u8) -> Result<(), CpuError> {
     let mem = c.bus.get_memory();
     mem.write_byte(0x100 + c.regs.s as usize, b)?;
     c.regs.s = c.regs.s.wrapping_sub(1);
     Ok(())
+}
+
+/**
+ * pop byte off the stack
+ */
+fn pop_byte(c: &mut Cpu) -> Result<u8, CpuError> {
+    let mem = c.bus.get_memory();
+    c.regs.s = c.regs.s.wrapping_add(1);
+    let b = mem.read_byte(0x100 + c.regs.s as usize)?;
+    Ok(b)
+}
+
+/**
+ * pop word off the stack
+ */
+fn pop_word_le(c: &mut Cpu) -> Result<u16, CpuError> {
+    let mem = c.bus.get_memory();
+    c.regs.s = c.regs.s.wrapping_sub(2);
+    let w = mem.read_word_le(0x100 + c.regs.s as usize)?;
+    Ok(w)
 }
 
 #[named]
@@ -255,11 +277,11 @@ fn adc<A: AddressingMode>(
 
     // perform the addition (regs.a+b+C)
     let mut sum: u16;
-    if c.is_decimal_set() {
+    if c.is_cpu_flag_set(CpuFlags::D) {
         // bcd
         sum = ((c.regs.a as u16) & 0x0f)
             .wrapping_add((b as u16) & 0x0f)
-            .wrapping_add(c.is_carry_set() as u16);
+            .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
         if sum >= 10 {
             sum = (sum.wrapping_sub(10)) | 10;
             sum = sum
@@ -273,13 +295,13 @@ fn adc<A: AddressingMode>(
         // normal
         sum = (c.regs.a as u16)
             .wrapping_add(b as u16)
-            .wrapping_add(c.is_carry_set() as u16);
+            .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
     }
 
     // set flags
-    c.set_carry_flag(sum > 0xff);
+    c.set_cpu_flags(CpuFlags::C, sum > 0xff);
     let o = ((c.regs.a as u16) ^ sum) & ((b as u16) ^ sum) & 0x80;
-    c.set_overflow_flag(o != 0);
+    c.set_cpu_flags(CpuFlags::V, o != 0);
     c.regs.a = (sum & 0xff) as u8;
     set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -323,7 +345,13 @@ fn ahx<A: AddressingMode>(
     }
 
     // get msb from target address
-    let h = (tgt >> 8) as u8;
+    let mut h = (tgt >> 8) as u8;
+
+    // add 1 on msb when page crossing
+    // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+    if extra_cycle_on_page_crossing {
+        h = h.wrapping_add(1);
+    }
 
     // A & X & (H + 1)
     let res = c.regs.a & c.regs.x & h.wrapping_add(1);
@@ -356,7 +384,7 @@ fn alr<A: AddressingMode>(
     rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -365,18 +393,13 @@ fn alr<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    // and (preserve flags, n and z are set in lfr)
+    let prev_p = c.regs.p;
+    and::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    c.regs.p = prev_p;
 
-    // set carry flag with bit to be shifted out
-    c.set_carry_flag(c.regs.a & 1 != 0);
-
-    // and
-    c.regs.a = c.regs.a & b;
-    // lsr
-    c.regs.a >>= 1;
-
-    set_zn_flags(c, c.regs.a);
+    // lsr A
+    lsr::<AccumulatorAddressing>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -404,7 +427,7 @@ fn anc<A: AddressingMode>(
     rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -413,15 +436,17 @@ fn anc<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
-
     // and
-    c.regs.a = c.regs.a & b;
-    set_zn_flags(c, c.regs.a);
-
-    // note to ANC: this command performs an AND operation only, but bit 7 is put into the carry, as if the ASL/ROL would have been executed.
-    c.set_carry_flag(utils::is_signed(c.regs.a));
+    and::<A>(
+        c,
+        d,
+        in_cycles,
+        extra_cycle,
+        decode_only,
+        rw_bp_triggered,
+        true,
+    )?;
+    c.set_cpu_flags(CpuFlags::C, utils::is_signed(c.regs.a));
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -500,6 +525,8 @@ fn and<A: AddressingMode>(
  *
  * addressing	assembler	opc	bytes	cycles
  * immediate	ARR #oper	6B	2	    2
+ *
+ * implemented according to [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
  */
 #[named]
 fn arr<A: AddressingMode>(
@@ -511,7 +538,7 @@ fn arr<A: AddressingMode>(
     rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -520,28 +547,53 @@ fn arr<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    if !c.is_cpu_flag_set(CpuFlags::D) {
+        // and
+        and::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
 
-    // perform and
-    c.regs.a = c.regs.a & b;
+        // ror A
+        let prev_a = c.regs.a;
+        ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
 
-    // handle overflow flag
-    c.set_overflow_flag((c.regs.a as usize + b as usize) > 0xff);
+        // set carry and overflow
+        c.set_cpu_flags(CpuFlags::C, utils::is_signed(prev_a));
+        let is_bit_6_set = prev_a & 0b01000000;
+        c.set_cpu_flags(
+            CpuFlags::V,
+            (is_bit_6_set as i8 ^ utils::is_signed(prev_a) as i8) != 0,
+        );
+        set_zn_flags(c, c.regs.a);
+    } else {
+        // decimal
+        // and
+        and::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+        let and_res = c.regs.a;
+        ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
 
-    // save carry and bit 7 of A
-    let previous_c: bool = c.is_carry_set();
-    let previous_bit7 = utils::is_signed(c.regs.a);
+        // fix for decimal
 
-    // ror
-    c.regs.a = c.regs.a >> 1;
+        // original C is preserved in N
+        c.set_cpu_flags(CpuFlags::N, c.is_cpu_flag_set(CpuFlags::C));
 
-    // swap carry and bit 7 of A
-    c.set_carry_flag(previous_bit7);
-    if previous_c {
-        c.regs.a |= 0x80;
+        // Z is set when the ROR produced a zero result
+        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+
+        // V is set when bit 6 of the result was changed by the ROR
+        let v = ((c.regs.a ^ and_res) & 0x40) >> 6;
+        c.set_cpu_flags(CpuFlags::V, v != 0);
+
+        // fixup for low nibble
+        if (and_res & 0xf) + (and_res & 0x1) > 0x5 {
+            c.regs.a = (c.regs.a & 0xf0) | ((c.regs.a + 0x6) & 0xf);
+        }
+        // fixup for high nibble, set carry
+        if (and_res & 0xf0) + (and_res & 0x10) > 0x50 {
+            c.regs.a = (c.regs.a & 0x0f) | ((c.regs.a + 0x60) & 0xf0);
+            c.set_cpu_flags(CpuFlags::C, true);
+        } else {
+            c.set_cpu_flags(CpuFlags::C, false);
+        }
     }
-    set_zn_flags(c, c.regs.a);
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -592,12 +644,12 @@ fn asl<A: AddressingMode>(
 
     // read operand
     let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
-    c.set_carry_flag(utils::is_signed(b));
+    c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
 
     // shl
     b <<= 1;
-    c.set_zero_flag(c.regs.a == 0);
-    c.set_negative_flag(utils::is_signed(b));
+    c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
 
     // store back
     A::store(c, d, tgt, rw_bp_triggered, b)?;
@@ -647,7 +699,7 @@ fn bcc<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if !c.is_carry_set() {
+    if !c.is_cpu_flag_set(CpuFlags::C) {
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
@@ -705,7 +757,7 @@ fn bcs<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if c.is_carry_set() {
+    if c.is_cpu_flag_set(CpuFlags::C) {
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
@@ -762,7 +814,7 @@ fn beq<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if c.is_zero_set() {
+    if c.is_cpu_flag_set(CpuFlags::Z) {
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
@@ -825,9 +877,9 @@ fn bit<A: AddressingMode>(
 
     let and_res = c.regs.a & b;
 
-    c.set_zero_flag(and_res == 0);
-    c.set_negative_flag(utils::is_signed(b));
-    c.set_overflow_flag(b & 0b01000000 != 0);
+    c.set_cpu_flags(CpuFlags::Z, and_res == 0);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
+    c.set_cpu_flags(CpuFlags::V, b & 0b01000000 != 0);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -874,7 +926,7 @@ fn bmi<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if c.is_negative_set() {
+    if c.is_cpu_flag_set(CpuFlags::N) {
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
@@ -930,7 +982,7 @@ fn bne<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if !c.is_zero_set() {
+    if !c.is_cpu_flag_set(CpuFlags::Z) {
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
@@ -987,7 +1039,7 @@ fn bpl<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if !c.is_negative_set() {
+    if !c.is_cpu_flag_set(CpuFlags::N) {
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
@@ -1042,7 +1094,7 @@ fn brk<A: AddressingMode>(
     push_byte(c, c.regs.p)?;
 
     // set break flag
-    c.set_break_flag(true);
+    c.set_cpu_flags(CpuFlags::B, true);
 
     // set pc to irq
     c.regs.pc = Vectors::IRQ as u16;
@@ -1092,7 +1144,7 @@ fn bvc<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if !c.is_overflow_set() {
+    if !c.is_cpu_flag_set(CpuFlags::V) {
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
@@ -1149,7 +1201,7 @@ fn bvs<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if c.is_overflow_set() {
+    if c.is_cpu_flag_set(CpuFlags::V) {
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
@@ -1201,7 +1253,7 @@ fn clc<A: AddressingMode>(
     }
 
     // clear carry
-    c.set_carry_flag(false);
+    c.set_cpu_flags(CpuFlags::C, false);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1243,7 +1295,7 @@ fn cld<A: AddressingMode>(
     }
 
     // clear decimal flag
-    c.set_decimal_flag(false);
+    c.set_cpu_flags(CpuFlags::D, false);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1285,7 +1337,7 @@ fn cli<A: AddressingMode>(
     }
 
     // enable interrupts, clear the flag
-    c.set_interrupt_disable_flag(false);
+    c.set_cpu_flags(CpuFlags::I, false);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1327,7 +1379,7 @@ fn clv<A: AddressingMode>(
     }
 
     // clear the overflow flag
-    c.set_overflow_flag(false);
+    c.set_cpu_flags(CpuFlags::V, false);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1381,9 +1433,9 @@ fn cmp<A: AddressingMode>(
     let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
     let res = c.regs.a.wrapping_sub(b);
-    c.set_carry_flag(c.regs.a >= b);
-    c.set_zero_flag(c.regs.a == b);
-    c.set_negative_flag(utils::is_signed(res));
+    c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
+    c.set_cpu_flags(CpuFlags::Z, c.regs.a == b);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -1433,9 +1485,9 @@ fn cpx<A: AddressingMode>(
     let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
     let res = c.regs.x.wrapping_sub(b);
-    c.set_carry_flag(c.regs.x >= b);
-    c.set_zero_flag(c.regs.x == b);
-    c.set_negative_flag(utils::is_signed(res));
+    c.set_cpu_flags(CpuFlags::C, c.regs.x >= b);
+    c.set_cpu_flags(CpuFlags::Z, c.regs.x == b);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -1485,9 +1537,9 @@ fn cpy<A: AddressingMode>(
     let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
     let res = c.regs.y.wrapping_sub(b);
-    c.set_carry_flag(c.regs.y >= b);
-    c.set_zero_flag(c.regs.y == b);
-    c.set_negative_flag(utils::is_signed(res));
+    c.set_cpu_flags(CpuFlags::C, c.regs.y >= b);
+    c.set_cpu_flags(CpuFlags::Z, c.regs.y == b);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -1521,7 +1573,7 @@ fn dcp<A: AddressingMode>(
     rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -1530,18 +1582,11 @@ fn dcp<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    // C0+yy        nzc---  DCP op   DEC+CMP   op=op-1     // A-op
-    // dec
-    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
-    b = b.wrapping_sub(1);
-    A::store(c, d, tgt, false, b)?;
-
-    // cmp
-    let res = c.regs.a.wrapping_sub(b);
-    c.set_carry_flag(c.regs.a >= b);
-    c.set_zero_flag(c.regs.a == b);
-    c.set_negative_flag(utils::is_signed(res));
-
+    // perform dec + cmp internally (flags are set according to cmp, so save before)
+    let prev_p = c.regs.p;
+    dec::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    c.regs.p = prev_p;
+    cmp::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1627,7 +1672,7 @@ fn dex<A: AddressingMode>(
     _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -1672,7 +1717,7 @@ fn dey<A: AddressingMode>(
     _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -1826,7 +1871,7 @@ fn inx<A: AddressingMode>(
     _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -1925,8 +1970,15 @@ fn isc<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    // perform inc + sbc internally
+    // perform inc + sbc internally (sbc sets p, preserve carry flag after inc)
+    let prev_p = c.regs.p;
     inc::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+
+    // preserve carry
+    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+    c.regs.p = prev_p;
+    c.set_cpu_flags(CpuFlags::C, is_c_set);
+
     sbc::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -1954,7 +2006,7 @@ fn isc<A: AddressingMode>(
 #[named]
 fn jmp<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _d: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2022,10 +2074,13 @@ fn jsr<A: AddressingMode>(
     Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * CPU JAM!
+ */
 #[named]
 fn kil<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _d: &Debugger,
     _: usize,
     _: bool,
     decode_only: bool,
@@ -2090,7 +2145,7 @@ fn las<A: AddressingMode>(
 }
 
 /**
- * LAX
+ * LAX (undoc)
  *
  * LDA oper + LDX oper
  *
@@ -2333,7 +2388,7 @@ fn lsr<A: AddressingMode>(
     let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
 
     // save bit 0 in the carry
-    c.set_carry_flag(b & 1 != 0);
+    c.set_cpu_flags(CpuFlags::C, b & 1 != 0);
 
     // lsr
     b >>= 1;
@@ -2346,7 +2401,7 @@ fn lsr<A: AddressingMode>(
 }
 
 /**
- * LXA (LAX immediate)
+ * LXA (undoc) (aka LAX immediate)
  *
  * Store * AND oper in A and X
  *
@@ -2382,12 +2437,15 @@ fn lxa<A: AddressingMode>(
     // read operand
     let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
-    let k = 0xff;
+    // N and Z are set according to the value of the accumulator before the instruction executed
+    set_zn_flags(c, c.regs.a);
+
+    // we choose $ee as constant as specified in [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+    let k = 0xee;
     let res: u8 = (c.regs.a | k) & b;
     c.regs.x = res;
     c.regs.a = res;
 
-    set_zn_flags(c, res);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2506,14 +2564,14 @@ fn ora<A: AddressingMode>(
 #[named]
 fn pha<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -2522,21 +2580,41 @@ fn pha<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    push_byte(c, c.regs.a);
+    push_byte(c, c.regs.a)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * PHP - Push Processor Status
+ *
+ * Pushes a copy of the status flags on to the stack.
+ *
+ * The status register will be pushed with the break flag and bit 5 set to 1.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    PHP	        08	1	    3  
+ */
 #[named]
 fn php<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -2545,21 +2623,41 @@ fn php<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // ensure B and U(ndefined) are set to 1
+    let mut flags = CpuFlags::from_bits(c.regs.p).unwrap();
+    flags.set(CpuFlags::U, true);
+    flags.set(CpuFlags::B, true);
+    push_byte(c, flags.bits())?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * PLA - Pull Accumulator
+ *
+ * Pulls an 8 bit value from the stack and into the accumulator. The zero and negative flags are set as appropriate.
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of A is set
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    PLA	        68	1	    4  
+ */
 #[named]
 fn pla<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -2568,21 +2666,42 @@ fn pla<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    c.regs.a = pop_byte(c)?;
+    set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * PLP - Pull Processor Status
+ *
+ * Pulls an 8 bit value from the stack and into the processor flags. The flags will take on new states as determined by the value pulled.
+ *
+ * The status register will be pulled with the break flag and bit 5 ignored.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Set from stack
+ * Z	Zero Flag	Set from stack
+ * I	Interrupt Disable	Set from stack
+ * D	Decimal Mode Flag	Set from stack
+ * B	Break Command	Set from stack
+ * V	Overflow Flag	Set from stack
+ * N	Negative Flag	Set from stack
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    PLP	        28	1	    4  
+ */
 #[named]
 fn plp<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -2591,9 +2710,33 @@ fn plp<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // be sure B and U(nused) (always 1) are mantained
+    let b_set_before = CpuFlags::from_bits(c.regs.p).unwrap().contains(CpuFlags::B);
+    c.regs.p = pop_byte(c)?;
+    c.set_cpu_flags(CpuFlags::B, b_set_before);
+    c.set_cpu_flags(CpuFlags::U, true);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
+
+/**
+ * RLA (undoc) (aka RLN)
+ *
+ * ROL oper + AND oper
+ *
+ * M = C <- [76543210] <- C, A AND M -> A
+ *
+ * N	Z	C	I	D	V
+ * +	+	+	-	-	-
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * zeropage	RLA oper	27	2	5
+ * zeropage,X	RLA oper,X	37	2	6
+ * absolute	RLA oper	2F	3	6
+ * absolut,X	RLA oper,X	3F	3	7
+ * absolut,Y	RLA oper,Y	3B	3	7
+ * (indirect,X)	RLA (oper,X)	23	2	8
+ * (indirect),Y	RLA (oper),Y	33	2	8
+ */
 
 #[named]
 fn rla<A: AddressingMode>(
@@ -2605,7 +2748,7 @@ fn rla<A: AddressingMode>(
     rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -2614,10 +2757,43 @@ fn rla<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // perform rol + and internally
+    let prev_p = c.regs.p;
+    rol::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+
+    // preserve carry
+    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+    c.regs.p = prev_p;
+    c.set_cpu_flags(CpuFlags::C, is_c_set);
+    // n and z are set according to AND
+    and::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * ROL - Rotate Left
+ *
+ * Move each of the bits in either A or M one place to the left.
+ *
+ * Bit 0 is filled with the current value of the carry flag whilst the old bit 7 becomes the new carry flag value.
+ *
+ * Processor Status after use:
+ *
+ *  C	Carry Flag	Set to contents of old bit 7
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of the result is set
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * accumulator	ROL A	    2A	1	    2  
+ * zeropage	    ROL oper	26	2	    5  
+ * zeropage,X	ROL oper,X	36	2	    6  
+ * absolute	    ROL oper	2E	3	    6  
+ * absolute,X	ROL oper,X	3E	3	    7
+ */
 #[named]
 fn rol<A: AddressingMode>(
     c: &mut Cpu,
@@ -2637,10 +2813,48 @@ fn rol<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // read operand
+    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+
+    // save current carry
+    let carry = c.is_cpu_flag_set(CpuFlags::C);
+
+    // carry = bit 7
+    c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
+
+    b >>= 1;
+
+    // bit 0 = previous C
+    if carry {
+        b |= 0b00000001
+    } else {
+        b &= 0b11111110
+    }
+
+    // store back
+    A::store(c, d, tgt, rw_bp_triggered, b)?;
+    c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * ROR - Rotate Right
+ *
+ * Move each of the bits in either A or M one place to the right.
+ *
+ * Bit 7 is filled with the current value of the carry flag whilst the old bit 0 becomes the new carry flag value.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	        Set to contents of old bit 0
+ * Z	Zero Flag	        Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	    Not affected
+ * V	Overflow Flag	    Not affected
+ * N	Negative Flag	    Set if bit 7 of the result is set
+ */
 #[named]
 fn ror<A: AddressingMode>(
     c: &mut Cpu,
@@ -2660,10 +2874,52 @@ fn ror<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // read operand
+    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+
+    // save current carry
+    let carry = c.is_cpu_flag_set(CpuFlags::C);
+
+    // save current bit 0
+    let is_bit_0_set = b & 1;
+
+    // shr
+    b <<= 1;
+
+    // set bit 7 and C accordingly
+    if carry {
+        b |= 0b10000000;
+    } else {
+        b &= 0b01111111;
+    }
+    c.set_cpu_flags(CpuFlags::C, is_bit_0_set == 1);
+
+    // store back
+    A::store(c, d, tgt, rw_bp_triggered, b)?;
+    c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * RRA (undoc)
+ *
+ * ROR oper + ADC oper
+ *
+ * M = C -> [76543210] -> C, A + M + C -> A, C
+ *
+ * N	Z	C	I	D	V
+ * +	+	+	-	-	+
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * zeropage	RRA oper	67	2	5
+ * zeropage,X	RRA oper,X	77	2	6
+ * absolute	RRA oper	6F	3	6
+ * absolut,X	RRA oper,X	7F	3	7
+ * absolut,Y	RRA oper,Y	7B	3	7
+ * (indirect,X)	RRA (oper,X)	63	2	8
+ * (indirect),Y	RRA (oper),Y	73	2	8
+ */
 #[named]
 fn rra<A: AddressingMode>(
     c: &mut Cpu,
@@ -2674,7 +2930,7 @@ fn rra<A: AddressingMode>(
     rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -2683,21 +2939,53 @@ fn rra<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // perform ror + adc internally
+    let prev_p = c.regs.p;
+    ror::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+
+    // preserve carry
+    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+    c.regs.p = prev_p;
+    c.set_cpu_flags(CpuFlags::C, is_c_set);
+
+    // all other flags are set by adc
+    adc::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+* RTI - Return from Interrupt
+*
+* The RTI instruction is used at the end of an interrupt processing routine.
+*
+* It pulls the processor flags from the stack followed by the program counter.
+*
+* The status register is pulled with the break flag and bit 5 ignored. Then PC is pulled from the stack.
+*
+* Processor Status after use:
+*
+* C	Carry Flag	Set from stack
+* Z	Zero Flag	Set from stack
+* I	Interrupt Disable	Set from stack
+* D	Decimal Mode Flag	Set from stack
+* B	Break Command	Set from stack
+* V	Overflow Flag	Set from stack
+* N	Negative Flag	Set from stack
+*
+* addressing	assembler	opc	bytes	cycles
+* implied	    RTI	        40	1	    6
+*/
 #[named]
 fn rti<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -2706,21 +2994,48 @@ fn rti<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    // pull flags, ignoring B and U(nused) (U is always 1 anyway)
+    let is_b_set = c.is_cpu_flag_set(CpuFlags::B);
+    c.regs.p = pop_byte(c)?;
+    c.set_cpu_flags(CpuFlags::B, is_b_set);
+    c.set_cpu_flags(CpuFlags::U, true);
+
+    // pull pc
+    c.regs.pc = pop_word_le(c)?;
+    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * RTS - Return from Subroutine
+ *
+ * The RTS instruction is used at the end of a subroutine to return to the calling routine.
+ *
+ * It pulls the program counter (minus one) from the stack.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    RTS 	    60	1	    6  
+ */
 #[named]
 fn rts<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -2729,10 +3044,26 @@ fn rts<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    c.regs.pc = pop_word_le(c)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * SAX (undoc) (aka AXS, aka AAX)
+ *
+ * A and X are put on the bus at the same time (resulting effectively in an AND operation) and stored in M
+ *
+ * A AND X -> M
+ *
+ * N	Z	C	I	D	V
+ * -	-	-	-	-	-
+ *
+ * addressing	assembler	    opc	bytes	cycles
+ * zeropage	    SAX oper	    87	2	    3
+ * zeropage,Y	SAX oper,Y	    97	2	    4
+ * absolute	    SAX oper	    8F	3	    4
+ * (indirect,X)	SAX (oper,X)	83	2	    6
+ */
 #[named]
 fn sax<A: AddressingMode>(
     c: &mut Cpu,
@@ -2752,7 +3083,8 @@ fn sax<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    let b = c.regs.a & c.regs.x;
+    A::store(c, d, tgt, rw_bp_triggered, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2803,14 +3135,14 @@ fn sbc<A: AddressingMode>(
     let sub: u16 = (c.regs.a as u16)
         .wrapping_sub(b as u16)
         .wrapping_sub(1)
-        .wrapping_add(c.is_carry_set() as u16);
+        .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
 
-    if c.is_decimal_set() {
+    if c.is_cpu_flag_set(CpuFlags::D) {
         // bcd
         let mut lo: u8 = (c.regs.a & 0x0f)
             .wrapping_sub(b & 0x0f)
             .wrapping_sub(1)
-            .wrapping_add(c.is_carry_set() as u8);
+            .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u8);
         let mut hi: u8 = (c.regs.a >> 4).wrapping_sub(b >> 4);
         if lo & 0x10 != 0 {
             lo = lo.wrapping_sub(6);
@@ -2826,22 +3158,26 @@ fn sbc<A: AddressingMode>(
     }
 
     // set flags
-    c.set_carry_flag(sub < 0x100);
+    c.set_cpu_flags(CpuFlags::C, sub < 0x100);
     let o = ((c.regs.a as u16) ^ sub) & ((b as u16) ^ sub) & 0x80;
-    c.set_overflow_flag(o != 0);
-    c.set_zero_flag(c.regs.a == 0);
-    c.set_negative_flag(utils::is_signed(c.regs.a));
+    c.set_cpu_flags(CpuFlags::V, o != 0);
+    c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+    c.set_cpu_flags(CpuFlags::N, utils::is_signed(c.regs.a));
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
 /**
-* SBX (undoc)
+* SBX (undoc) (aka AXS, SAX)
+*
 * CMP and DEX at once, sets flags like CMP
 *
 * (A AND X) - oper -> X
 *
 * N	Z	C	I	D	V
 * +	+	+	-	-	-
+*
+* addressing	assembler	opc	bytes	cycles
+* immediate	    SBX #oper	CB	2	    2
 */
 #[named]
 fn sbx<A: AddressingMode>(
@@ -2866,25 +3202,41 @@ fn sbx<A: AddressingMode>(
     let b = A::load(c, d, tgt, rw_bp_triggered)?;
 
     // and
-    c.regs.a = c.regs.a & c.regs.x;
+    let and_res = c.regs.a & c.regs.x;
 
     // cmp
-    c.regs.a = c.regs.a.wrapping_sub(b);
-    c.set_carry_flag(c.regs.a >= b);
-    c.set_zero_flag(c.regs.a == b);
-
-    c.set_negative_flag(utils::is_signed(c.regs.x));
+    c.regs.x = and_res.wrapping_sub(b);
+    c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
+    set_zn_flags(c, c.regs.x);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * SEC - Set Carry Flag
+ *
+ * C = 1
+ *
+ * Set the carry flag to one.
+ *
+ * C	Carry Flag	Set to 1
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    SEC	        38	1	    2  
+ */
 #[named]
 fn sec<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2897,19 +3249,36 @@ fn sec<A: AddressingMode>(
     }
 
     // set carry
-    c.set_carry_flag(true);
-
+    c.set_cpu_flags(CpuFlags::C, true);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * SED - Set Decimal Flag
+ *
+ * D = 1
+ *
+ * Set the carry flag to one.
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Set to 1
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    SED	        F8	1	    2  
+ */
 #[named]
 fn sed<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2922,18 +3291,36 @@ fn sed<A: AddressingMode>(
     }
 
     // set decimal flag
-    c.set_decimal_flag(true);
+    c.set_cpu_flags(CpuFlags::D, true);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * SEI - Set Interrupt Disable Flag
+ *
+ * I = 1
+ *
+ * Set the carry flag to one.
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Set to 1
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    SED	        78	1	    2  
+ */
 #[named]
 fn sei<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2946,11 +3333,26 @@ fn sei<A: AddressingMode>(
     }
 
     // disable interrupts
-    c.set_interrupt_disable_flag(true);
-
+    c.set_cpu_flags(CpuFlags::I, true);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * SHX (undoc) (aka A11, SXA, XAS)
+ *
+ * Stores X AND (high-byte of addr. + 1) at addr.
+ *
+ * unstable: sometimes 'AND (H+1)' is dropped, page boundary crossings may not work
+ * (with the high-byte of the value used as the high-byte of the address)
+ *
+ * X AND (H+1) -> M
+ *
+ * N	Z	C	I	D	V
+ * -	-	-	-	-	-
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * absolut,Y	SHX oper,Y	9E	3	5  	†
+*/
 #[named]
 fn shx<A: AddressingMode>(
     c: &mut Cpu,
@@ -2970,10 +3372,38 @@ fn shx<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get msb from target address
+    let mut h = (tgt >> 8) as u8;
+
+    // add 1 on msb when page crossing
+    // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+    if extra_cycle_on_page_crossing {
+        h = h.wrapping_add(1);
+    }
+
+    // X & (H + 1)
+    let res = c.regs.x & h.wrapping_add(1);
+
+    // store
+    A::store(c, d, tgt, rw_bp_triggered, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * SHY (undoc) (aka A11, SYA, SAY)
+ *
+ * Stores Y AND (high-byte of addr. + 1) at addr.
+ *
+ * unstable: sometimes 'AND (H+1)' is dropped, page boundary crossings may not work (with the high-byte of the value used as the high-byte of the address)
+ *
+ * Y AND (H+1) -> M
+ *
+ * N	Z	C	I	D	V
+ * -	-	-	-	-	-
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * absolut,X	SHY oper,X	9C	3	    5  	†
+*/
 #[named]
 fn shy<A: AddressingMode>(
     c: &mut Cpu,
@@ -2993,10 +3423,42 @@ fn shy<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get msb from target address
+    let mut h = (tgt >> 8) as u8;
+
+    // add 1 on msb when page crossing
+    // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+    if extra_cycle_on_page_crossing {
+        h = h.wrapping_add(1);
+    }
+
+    // Y & (H + 1)
+    let res = c.regs.y & h.wrapping_add(1);
+
+    // store
+    A::store(c, d, tgt, rw_bp_triggered, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * SLO (undoc) (aka ASO)
+ *
+ * ASL oper + ORA oper
+ *
+ * M = C <- [76543210] <- 0, A OR M -> A
+ *
+ * N	Z	C	I	D	V
+ * +	+	+	-	-	-
+ *
+ * addressing	assembler	    opc	bytes	cycles
+ * zeropage	    SLO oper	    07	2	    5
+ * zeropage,X	SLO oper,X	    17	2	    6
+ * absolute	    SLO oper	    0F	3	    6
+ * absolut,X	SLO oper,X	    1F	3	    7
+ * absolut,Y	SLO oper,Y	    1B	3	    7
+ * (indirect,X)	SLO (oper,X)	03	2	    8
+ * (indirect),Y	SLO (oper),Y	13	2	    8
+*/
 #[named]
 fn slo<A: AddressingMode>(
     c: &mut Cpu,
@@ -3007,7 +3469,7 @@ fn slo<A: AddressingMode>(
     rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -3016,10 +3478,39 @@ fn slo<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // perform asl + ora internally
+    let prev_p = c.regs.p;
+    asl::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+
+    // preserve carry
+    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+    c.regs.p = prev_p;
+    c.set_cpu_flags(CpuFlags::C, is_c_set);
+
+    // other flags are set by ora
+    ora::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * SRE (undoc) (aka LSE)
+ *
+ * LSR oper + EOR oper
+ *
+ * M = 0 -> [76543210] -> C, A EOR M -> A
+ *
+ * N	Z	C	I	D	V
+ * +	+	+	-	-	-
+ *
+ * addressing	assembler	    opc	bytes	cycles
+ * zeropage	    SRE oper	    47	2	    5
+ * zeropage,X	SRE oper,X	    57	2	    6
+ * absolute	    SRE oper	    4F	3	    6
+ * absolut,X	SRE oper,X	    5F	3	    7
+ * absolut,Y	SRE oper,Y	    5B	3	    7
+ * (indirect,X)	SRE (oper,X)	43	2	    8
+ * (indirect),Y	SRE (oper),Y	53	2	    8  
+ */
 #[named]
 fn sre<A: AddressingMode>(
     c: &mut Cpu,
@@ -3030,7 +3521,7 @@ fn sre<A: AddressingMode>(
     rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -3039,10 +3530,37 @@ fn sre<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // perform lsr + eor internally
+    let prev_p = c.regs.p;
+    lsr::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+
+    // preserve carry
+    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+    c.regs.p = prev_p;
+    c.set_cpu_flags(CpuFlags::C, is_c_set);
+
+    // other flags are set by eor
+    eor::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * STA - Store Accumulator
+ *
+ * M = A
+ *
+ * Stores the contents of the accumulator into memory.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn sta<A: AddressingMode>(
     c: &mut Cpu,
@@ -3067,6 +3585,23 @@ fn sta<A: AddressingMode>(
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * STX - Store X Register
+ *
+ * M = X
+ *
+ * Stores the contents of the X register into memory.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn stx<A: AddressingMode>(
     c: &mut Cpu,
@@ -3086,10 +3621,28 @@ fn stx<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // store X in memory
+    A::store(c, d, tgt, rw_bp_triggered, c.regs.x)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * STY - Store Y Register
+ *
+ * M = Y
+ *
+ * Stores the contents of the Y register into memory.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn sty<A: AddressingMode>(
     c: &mut Cpu,
@@ -3109,10 +3662,26 @@ fn sty<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // store y in memory
+    A::store(c, d, tgt, rw_bp_triggered, c.regs.y)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * TAS (undoc) (aka XAS, SHS)
+ *
+ * Puts A AND X in SP and stores A AND X AND (high-byte of addr. + 1) at addr.
+ *
+ * unstable: sometimes 'AND (H+1)' is dropped, page boundary crossings may not work (with the high-byte of the value used as the high-byte of the address)
+ *
+ * A AND X -> SP, A AND X AND (H+1) -> M
+ *
+ * N	Z	C	I	D	V
+ * -	-	-	-	-	-
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * absolut,Y	TAS oper,Y	9B	3	5  	†
+*/
 #[named]
 fn tas<A: AddressingMode>(
     c: &mut Cpu,
@@ -3132,21 +3701,55 @@ fn tas<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // get msb from target address
+    let mut h = (tgt >> 8) as u8;
+
+    // add 1 on msb when page crossing
+    // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+    if extra_cycle_on_page_crossing {
+        h = h.wrapping_add(1);
+    }
+
+    // set sp
+    c.regs.s = c.regs.a & c.regs.x;
+    let res = c.regs.s & h.wrapping_add(1);
+
+    // store
+    A::store(c, d, tgt, rw_bp_triggered, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * TAX - Transfer Accumulator to X
+ *
+ * X = A
+ *
+ * Copies the current contents of the accumulator into the X register and sets the zero and negative flags as appropriate.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if X = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of X is set
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    TAX	        AA	1	    2  
+ */
 #[named]
 fn tax<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -3155,87 +3758,38 @@ fn tax<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    c.regs.x = c.regs.a;
+    set_zn_flags(c, c.regs.x);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * TAY - Transfer Accumulator to Y
+ *
+ * Y = A
+ * Copies the current contents of the accumulator into the Y register and sets the zero and negative flags as appropriate.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if Y = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of Y is set
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    TAY	        A8	1	    2  
+*/
 #[named]
 fn tay<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
-    quiet: bool,
-) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
-
-    panic!("*** NOT IMPLEMENTED ***");
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
-}
-
-#[named]
-fn tsx<A: AddressingMode>(
-    c: &mut Cpu,
-    d: &Debugger,
-    in_cycles: usize,
-    extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-    rw_bp_triggered: bool,
-    quiet: bool,
-) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
-
-    panic!("*** NOT IMPLEMENTED ***");
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
-}
-
-#[named]
-fn txa<A: AddressingMode>(
-    c: &mut Cpu,
-    d: &Debugger,
-    in_cycles: usize,
-    extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-    rw_bp_triggered: bool,
-    quiet: bool,
-) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
-
-    panic!("*** NOT IMPLEMENTED ***");
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
-}
-
-#[named]
-fn txs<A: AddressingMode>(
-    c: &mut Cpu,
-    d: &Debugger,
-    in_cycles: usize,
-    extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3247,22 +3801,42 @@ fn txs<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    // X -> S
-    c.regs.s = c.regs.x;
+    c.regs.y = c.regs.a;
+    set_zn_flags(c, c.regs.y);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * TSX - Transfer Stack Pointer to X
+ *
+ * X = S
+ *
+ * Copies the current contents of the stack register into the X register and sets the zero and negative flags as appropriate.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if X = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of X is set
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    TSX	        BA	1	    2
+ */
 #[named]
-fn tya<A: AddressingMode>(
+fn tsx<A: AddressingMode>(
     c: &mut Cpu,
-    d: &Debugger,
+    _: &Debugger,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
+    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
@@ -3271,9 +3845,162 @@ fn tya<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    c.regs.x = c.regs.s;
+    set_zn_flags(c, c.regs.x);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
+
+/**
+ * TXA - Transfer X to Accumulator
+ *
+ * A = X
+ *
+ * Copies the current contents of the X register into the accumulator and sets the zero and negative flags as appropriate.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of A is set
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    TXA	        8A	1	    2  
+*/
+#[named]
+fn txa<A: AddressingMode>(
+    c: &mut Cpu,
+    _: &Debugger,
+    in_cycles: usize,
+    extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
+    _: bool,
+    quiet: bool,
+) -> Result<(i8, usize), CpuError> {
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    if !quiet {
+        debug_out_opcode::<A>(c, function_name!())?;
+    }
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
+    c.regs.a = c.regs.x;
+    set_zn_flags(c, c.regs.a);
+    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+}
+
+/**
+ * TXS - Transfer X to Stack Pointer
+ *
+ * S = X
+ *
+ * Copies the current contents of the X register into the stack register.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * implied	    TXS	        9A	1	    2  
+ */
+#[named]
+fn txs<A: AddressingMode>(
+    c: &mut Cpu,
+    _: &Debugger,
+    in_cycles: usize,
+    extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
+    _: bool,
+    quiet: bool,
+) -> Result<(i8, usize), CpuError> {
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    if !quiet {
+        debug_out_opcode::<A>(c, function_name!())?;
+    }
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
+    c.regs.s = c.regs.x;
+    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+}
+
+/**
+ * TYA - Transfer Y to Accumulator
+ *
+ * A = Y
+ *
+ * Copies the current contents of the Y register into the accumulator and sets the zero and negative flags as appropriate.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of A is set
+ *
+ * addressing	assembler	opc	    bytes	cycles
+ * implied	    TYA	        98	    1	    2  
+ */
+#[named]
+fn tya<A: AddressingMode>(
+    c: &mut Cpu,
+    _: &Debugger,
+    in_cycles: usize,
+    extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
+    _: bool,
+    quiet: bool,
+) -> Result<(i8, usize), CpuError> {
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    if !quiet {
+        debug_out_opcode::<A>(c, function_name!())?;
+    }
+    if decode_only {
+        // perform decode only, no execution
+        return Ok((A::len(), 0));
+    }
+
+    c.regs.a = c.regs.y;
+    set_zn_flags(c, c.regs.a);
+    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+}
+
+/**
+ * XAA (undoc) (aka ANE)
+ *
+ * AND X + AND oper
+ *
+ * Highly unstable, do not use.
+ *
+ * A base value in A is determined based on the contets of A and a constant, which may be typically $00, $ff, $ee, etc.
+ * The value of this constant depends on temerature, the chip series, and maybe other factors, as well.
+ *
+ * In order to eliminate these uncertaincies from the equation, use either 0 as the operand or a value of $FF in the accumulator.
+ *
+ * (A OR CONST) AND X AND oper -> A
+ *
+ * N	Z	C	I	D	V
+ * +	+	-	-	-	-
+ *
+ * addressing	assembler	opc	bytes	cycles
+ * immediate	ANE #oper	8B	2	    2  	††
+ */
 
 #[named]
 fn xaa<A: AddressingMode>(
@@ -3294,6 +4021,16 @@ fn xaa<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    panic!("*** NOT IMPLEMENTED ***");
+    // read operand
+    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+
+    // N and Z are set according to the value of the accumulator before the instruction executed
+    set_zn_flags(c, c.regs.a);
+
+    // we choose $ef as constant as specified in [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+    let k = 0xef;
+    let res: u8 = (c.regs.a | k) & c.regs.x & b;
+    c.regs.a = res;
+
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
