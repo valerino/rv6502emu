@@ -343,6 +343,9 @@ impl Debugger {
         println!("\tq ..................................... exit emulator.");
         println!("\tr ..................................... show registers.");
         println!("\tp ..................................... step next instruction.");
+        println!(
+            "\to ......................................step next instruction and show registers."
+        );
         println!("\ts <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.",
         );
         println!("\tt [$address] .......................... reset (restart from given [$address], or defaults to reset vector).");
@@ -494,6 +497,8 @@ impl Debugger {
             }
             // step
             "p" => return Ok('p'),
+            // step + show registers
+            "o" => return Ok('o'),
             // save memory
             "s" => {
                 self.cmd_dump_save_memory(c, cmd, it);

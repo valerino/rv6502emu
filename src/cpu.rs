@@ -361,7 +361,7 @@ impl Cpu {
             // handles debugger if any
             let debugger_res = dbg.handle_debugger_input_stdin(self)?;
             match debugger_res {
-                'p' => {
+                'p' | 'o' => {
                     // decode
                     let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing, mrk) =
                         opcodes::OPCODE_MATRIX[b as usize];
@@ -405,6 +405,11 @@ impl Cpu {
                         false,
                     ) {
                         Ok((a, b)) => {
+                            if debugger_res == 'o' {
+                                // show registers too
+                                debug_out_registers(self);
+                            }
+
                             instr_size = a;
                             elapsed = b;
                             if bp_triggered == 1 {
@@ -442,6 +447,7 @@ impl Cpu {
                         // bp_triggered was 1 (a breakpoint has just hit)
                         bp_triggered = 2;
                     }
+
                     if cycles != 0 && elapsed >= cycles {
                         break 'interpreter;
                     }

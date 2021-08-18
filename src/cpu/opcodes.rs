@@ -703,7 +703,7 @@ fn bcc<A: AddressingMode>(
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
         c.regs.pc = new_pc;
     }
 
@@ -761,7 +761,7 @@ fn bcs<A: AddressingMode>(
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
         c.regs.pc = new_pc;
     }
 
@@ -818,7 +818,7 @@ fn beq<A: AddressingMode>(
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
         c.regs.pc = new_pc;
     }
 
@@ -930,7 +930,7 @@ fn bmi<A: AddressingMode>(
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
         c.regs.pc = new_pc;
     }
     Ok((
@@ -986,7 +986,7 @@ fn bne<A: AddressingMode>(
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
         c.regs.pc = new_pc;
     }
 
@@ -1043,7 +1043,7 @@ fn bpl<A: AddressingMode>(
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
         c.regs.pc = new_pc;
     }
 
@@ -1148,7 +1148,7 @@ fn bvc<A: AddressingMode>(
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
         c.regs.pc = new_pc;
     }
 
@@ -1205,7 +1205,7 @@ fn bvs<A: AddressingMode>(
         // branch is taken, add another cycle
         cycles += 1;
         taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b as u16);
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
         c.regs.pc = new_pc;
     }
 

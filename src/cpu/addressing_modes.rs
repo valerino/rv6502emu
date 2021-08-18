@@ -32,6 +32,7 @@ use crate::cpu::cpu_error::{CpuError, CpuErrorType};
 use crate::cpu::debugger::breakpoints::BreakpointType;
 use crate::cpu::debugger::Debugger;
 use crate::cpu::{Cpu, CpuOperation};
+use crate::utils;
 
 /**
  * this is used by the assembler part to tag elements in the opcode matrix
@@ -173,14 +174,15 @@ fn is_page_cross(src_addr: u16, dst_addr: u16) -> bool {
 /**
  * get branch target for relative addressing, returns tuple with (new_pc_address, add_extra_cycle)
  */
-pub(crate) fn get_relative_branch_target(src_pc: u16, branch_offset: u16) -> (u16, bool) {
-    let signed_offset = branch_offset & 0x7f;
-    let new_pc: u16;
-    if branch_offset <= 127 {
-        new_pc = src_pc.wrapping_add(signed_offset);
-    } else {
-        new_pc = src_pc.wrapping_sub(signed_offset);
+pub(crate) fn get_relative_branch_target(src_pc: u16, branch_offset: u8) -> (u16, bool) {
+    let mut two_compl: u16 = branch_offset as u16;
+    if utils::is_signed(branch_offset) {
+        // sign extend
+        two_compl |= 0xff00;
     }
+
+    // new offset is pc + 2 complement signed offset + sizeof the opcode (which, for relative addressing, is 2)
+    let new_pc = src_pc.wrapping_add(two_compl).wrapping_add(2);
     if is_page_cross(src_pc, new_pc) {
         return (new_pc, true);
     }
@@ -575,13 +577,14 @@ impl AddressingMode for RelativeAddressing {
     }
 
     fn target_address(
-        _c: &mut Cpu,
+        c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
-        let w = _c.regs.pc.wrapping_add(1);
+        let w = c.regs.pc.wrapping_add(1);
 
         // this will check for page crossing too (check mandatory in relative addressing)
-        let (_, cross) = get_relative_branch_target(_c.regs.pc, w);
+        let (_, cross) =
+            get_relative_branch_target(c.regs.pc, c.bus.get_memory().read_byte(w as usize)?);
         Ok((w as u16, cross))
     }
 }

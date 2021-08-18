@@ -49,13 +49,8 @@
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=debugger_test",
                     "--package=rv6502emu"
                 ],
-                "filter": {
-                    "name": "debugger_test",
-                    "kind": "bin"
-                }
             },
             "args": [],
             "cwd": "${workspaceFolder}"
