@@ -88,15 +88,19 @@ pub(crate) trait AddressingMode {
      */
     fn load(
         c: &mut Cpu,
-        d: &Debugger,
+        d: &mut Option<&mut Debugger>,
         address: u16,
         rw_bp_triggered: bool,
     ) -> Result<u8, CpuError> {
         let m = c.bus.get_memory();
 
         // check if a breakpoint has to be triggered (if not triggered before)
-        if !rw_bp_triggered {
-            match d.has_enabled_breakpoint(address, BreakpointType::READ) {
+        if !rw_bp_triggered && d.is_some() {
+            match d
+                .as_mut()
+                .unwrap()
+                .has_enabled_breakpoint(address, BreakpointType::READ)
+            {
                 Some(idx) => {
                     // trigger!
                     let e = CpuError {
@@ -126,7 +130,7 @@ pub(crate) trait AddressingMode {
      */
     fn store(
         c: &mut Cpu,
-        d: &Debugger,
+        d: &mut Option<&mut Debugger>,
         address: u16,
         rw_bp_triggered: bool,
         b: u8,
@@ -134,8 +138,12 @@ pub(crate) trait AddressingMode {
         let m = c.bus.get_memory();
 
         // check if a breakpoint has to be triggered (if not triggered before)
-        if !rw_bp_triggered {
-            match d.has_enabled_breakpoint(address, BreakpointType::WRITE) {
+        if !rw_bp_triggered && d.is_some() {
+            match d
+                .as_mut()
+                .unwrap()
+                .has_enabled_breakpoint(address, BreakpointType::WRITE)
+            {
                 Some(idx) => {
                     // trigger!
                     let e = CpuError {
@@ -212,10 +220,21 @@ impl AddressingMode for AccumulatorAddressing {
         Ok((0, false))
     }
 
-    fn load(c: &mut Cpu, _: &Debugger, _: u16, _: bool) -> Result<u8, CpuError> {
+    fn load(
+        c: &mut Cpu,
+        _d: &mut Option<&mut Debugger>,
+        _address: u16,
+        _b: bool,
+    ) -> Result<u8, CpuError> {
         Ok(c.regs.a)
     }
-    fn store(c: &mut Cpu, _: &Debugger, _: u16, _: bool, b: u8) -> Result<(), CpuError> {
+    fn store(
+        c: &mut Cpu,
+        _d: &mut Option<&mut Debugger>,
+        _address: u16,
+        _b: bool,
+        b: u8,
+    ) -> Result<(), CpuError> {
         c.regs.a = b;
         Ok(())
     }

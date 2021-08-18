@@ -205,8 +205,8 @@ pub struct Cpu {
     /// current cpu cycles.
     pub cycles: usize,
 
-    /// debug ?
-    pub debug: bool,
+    /// running under debugger ?
+    debug: bool,
 
     /// the bus.
     pub bus: Box<dyn Bus>,
@@ -270,17 +270,13 @@ impl Cpu {
     /**
      * creates a new cpu instance, with the given Bus attached.
      */
-    pub fn new(
-        b: Box<dyn Bus>,
-        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
-        debug: bool,
-    ) -> Cpu {
+    pub fn new(b: Box<dyn Bus>, cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>) -> Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
             bus: b,
             cb: cb,
-            debug: debug,
+            debug: false,
         };
         c
     }
@@ -295,7 +291,7 @@ impl Cpu {
     ) -> Cpu {
         let m = super::memory::new_default(mem_size);
         let b = super::bus::new_default(m);
-        Cpu::new(b, cb, debug)
+        Cpu::new(b, cb)
     }
 
     /**
@@ -347,9 +343,12 @@ impl Cpu {
      *
      * > note that reset() must be called first to set the start address !
      */
-    pub fn run(&mut self, cycles: usize) -> Result<(), CpuError> {
-        // create internal debugger
-        let mut dbg = Debugger::new(self.debug);
+    pub fn run(&mut self, dbg: &mut Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
+        // check if we have a debugger
+        if dbg.is_some() {
+            // a debugger is attached
+            self.debug = true;
+        }
 
         // loop
         let mut bp_triggered: i8 = 0;
@@ -359,7 +358,10 @@ impl Cpu {
             let b = self.fetch()?;
 
             // handles debugger if any
-            let debugger_res = dbg.handle_debugger_input_stdin(self)?;
+            let mut debugger_res = 'p';
+            if self.debug {
+                debugger_res = dbg.as_mut().unwrap().handle_debugger_input_stdin(self)?;
+            }
             match debugger_res {
                 'p' | 'o' => {
                     // decode
@@ -381,13 +383,17 @@ impl Cpu {
 
                     // check if we have a breakpoint at pc
                     let mut bp_idx = 0;
-                    if bp_triggered == 0 {
-                        match dbg.has_enabled_breakpoint(self.regs.pc, BreakpointType::EXEC) {
+                    if bp_triggered == 0 && self.debug {
+                        match dbg
+                            .as_mut()
+                            .unwrap()
+                            .has_enabled_breakpoint(self.regs.pc, BreakpointType::EXEC)
+                        {
                             None => (),
                             Some(idx) => {
                                 bp_triggered = 1;
                                 bp_idx = idx;
-                                dbg.going = false;
+                                dbg.as_mut().unwrap().going = false;
                             }
                         };
                     }
@@ -397,7 +403,7 @@ impl Cpu {
                     let mut elapsed: usize = 0;
                     let _ = match opcode_f(
                         self,
-                        &dbg,
+                        dbg,
                         opcode_cycles,
                         add_extra_cycle_on_page_crossing,
                         bp_triggered == 1, // when bp_triggered = 1, only decoding is done (no exec)
@@ -425,7 +431,7 @@ impl Cpu {
                                 debug_out_text(&format!("R/W breakpoint {} triggered!", e.bp_idx));
                                 rw_bp_triggered = true;
                                 bp_triggered = 1;
-                                dbg.going = false;
+                                dbg.as_mut().unwrap().going = false;
 
                                 // disable to avoid it trigger in the next step
                             } else {

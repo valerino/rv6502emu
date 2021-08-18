@@ -23,5 +23,5 @@ pub fn main() {
 
     // resets the cpu (use 0x400 as custom address for the Klaus test) and start execution
     c.reset(Some(0x400)).unwrap();
-    c.run(0).unwrap();
+    c.run(&mut None, 0).unwrap();
 }

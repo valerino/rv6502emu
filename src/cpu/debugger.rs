@@ -42,7 +42,10 @@ use std::str::SplitWhitespace;
 mod asm_disasm;
 pub(crate) mod breakpoints;
 
-pub(crate) struct Debugger {
+/**
+ * exposes the debugger.
+ */
+pub struct Debugger {
     /// breakpoints list.
     pub(crate) breakpoints: Vec<Bp>,
 
@@ -57,7 +60,7 @@ impl Debugger {
     /**
      * creates a new debugger instance
      */
-    pub(crate) fn new(enabled: bool) -> Debugger {
+    pub fn new(enabled: bool) -> Debugger {
         Debugger {
             breakpoints: Vec::new(),
             enabled: enabled,
@@ -410,71 +413,78 @@ impl Debugger {
      *
      * returns the debugger command ('q' on exit, '*' for no-op)
      */
-    pub(crate) fn handle_debugger_input_stdin(
-        &mut self,
-        c: &mut Cpu,
-    ) -> Result<char, std::io::Error> {
+    pub fn handle_debugger_input_stdin(&mut self, c: &mut Cpu) -> Result<char, std::io::Error> {
+        // read from stdin
+        let mut cmd_string = String::new();
+        print!("?:> ");
+        io::stdout().flush().unwrap();
+        io::stdin().lock().read_line(&mut cmd_string)?;
+        Ok(self.handle_debugger_input(c, &cmd_string))
+    }
+
+    /**
+     * handle debugger input from string.
+     *
+     * returns the debugger command ('q' on exit, '*' for no-op)
+     */
+    pub fn handle_debugger_input(&mut self, c: &mut Cpu, cmd_string: &str) -> char {
         if self.enabled {
             if self.going {
                 // let it go!
-                return Ok('p');
+                return 'p';
             }
         }
-        // read from stdin
-        let mut full_string = String::new();
-        print!("?:> ");
-        io::stdout().flush().unwrap();
-        io::stdin().lock().read_line(&mut full_string)?;
+
         // split command and parameters
-        let mut it = full_string.split_whitespace();
+        let mut it = cmd_string.split_whitespace();
         let cmd_t = it.next().unwrap_or_default().to_ascii_lowercase();
         let cmd = cmd_t.trim();
         match cmd {
             // assemble
             "a" => {
                 self.cmd_assemble(c, it);
-                return Ok('*');
+                return '*';
             }
             "bc" => {
                 self.cmd_clear_breakpoints();
-                return Ok('*');
+                return '*';
             }
             "be" | "bd" | "bdel" => {
                 self.cmd_enable_disable_delete_breakpoint(cmd, it);
-                return Ok('*');
+                return '*';
             }
             "bx" | "br" | "bw" | "brw" | "bwr" => {
                 self.cmd_add_breakpoint(c, cmd, it);
-                return Ok('*');
+                return '*';
             }
             "bl" => {
                 self.cmd_show_breakpoints();
-                return Ok('*');
+                return '*';
             }
             // help
             "d" => {
                 self.cmd_disassemble(c, it);
-                return Ok('*');
+                return '*';
             }
             // edit memory
             "e" => {
                 self.cmd_edit_memory(c, it);
-                return Ok('*');
+                return '*';
             }
             // go
             "g" => {
                 self.going = true;
-                return Ok('p');
+                return 'p';
             }
             // help
             "h" => {
                 self.cmd_show_help();
-                return Ok('*');
+                return '*';
             }
             // load memory
             "l" => {
                 self.cmd_load_memory(c, it);
-                return Ok('*');
+                return '*';
             }
             // show memory size
             "mi" => {
@@ -483,46 +493,46 @@ impl Debugger {
                     "memory size: {} (${:04x}) bytes.",
                     mem_size, mem_size,
                 ));
-                return Ok('*');
+                return '*';
             }
             // quit
             "q" => {
                 debug_out_text(&"quit!");
-                return Ok('q');
+                return 'q';
             }
             // show registers
             "r" => {
                 debug_out_registers(c);
-                return Ok('*');
+                return '*';
             }
             // step
-            "p" => return Ok('p'),
+            "p" => return 'p',
             // step + show registers
-            "o" => return Ok('o'),
+            "o" => return 'o',
             // save memory
             "s" => {
                 self.cmd_dump_save_memory(c, cmd, it);
-                return Ok('*');
+                return '*';
             }
             // reset
             "t" => {
                 self.cmd_reset(c, it);
-                return Ok('*');
+                return '*';
             }
             // edit registers
             "v" => {
                 self.cmd_edit_registers(c, it);
-                return Ok('*');
+                return '*';
             }
             // dump as hex
             "x" => {
                 self.cmd_dump_save_memory(c, cmd, it);
-                return Ok('*');
+                return '*';
             }
             // invalid
             _ => {
                 self.cmd_invalid();
-                return Ok('*');
+                return '*';
             }
         };
     }
