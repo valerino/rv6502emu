@@ -381,7 +381,6 @@ impl Cpu {
 
                     // check if we have a breakpoint at pc
                     let mut bp_idx = 0;
-                    println!("bptrig={}", bp_triggered);
                     if bp_triggered == 0 {
                         match dbg.has_enabled_breakpoint(self.regs.pc, BreakpointType::EXEC) {
                             None => (),
@@ -446,7 +445,6 @@ impl Cpu {
                     if cycles != 0 && elapsed >= cycles {
                         break 'interpreter;
                     }
-                    println!("loop done, at_end_bptrig={}", bp_triggered);
                 }
                 'q' => {
                     // gracefully exit
