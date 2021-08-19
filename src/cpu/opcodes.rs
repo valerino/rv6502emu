@@ -106,13 +106,13 @@ lazy_static! {
             (jmp::<AbsoluteAddressing>, 3, false, OpcodeMarker{ name: "jmp", id: Abs}), (eor::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "eor", id: Abs}), (lsr::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Abs}), (sre::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "sre", id: Abs}),
 
             // 0x50 - 0x5f
-            (bvc::<ImpliedAddressing>, 2, true, OpcodeMarker{ name: "bvc", id: Imp}), (eor::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "eor", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (sre::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "sre", id: Iny}),
+            (bvc::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bvc", id: Rel}), (eor::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "eor", id: Iny}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (sre::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "sre", id: Iny}),
             (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}), (eor::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "eor", id: Zpx}), (lsr::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Zpx}), (sre::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "sre", id: Zpx}),
             (cli::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "cli", id: Imp}), (eor::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Aby}), (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}), (sre::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "sre", id: Aby}),
             (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}), (eor::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Abx}), (lsr::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "lsr", id: Abx}), (sre::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "sre", id: Abx}),
 
             // 0x60 - 0x6f
-            (rts::<RelativeAddressing>, 6, false, OpcodeMarker{ name: "rts", id: Rel}), (adc::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "adc", id: Xin}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (rra::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "rra", id: Xin}),
+            (rts::<ImpliedAddressing>, 6, false, OpcodeMarker{ name: "rts", id: Imp}), (adc::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "adc", id: Xin}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (rra::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "rra", id: Xin}),
             (nop::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "nop", id: Zpg}), (adc::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "adc", id: Zpg}), (ror::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "ror", id: Zpg}), (rra::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rra", id: Zpg}),
             (pla::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "pla", id: Imp}), (adc::<ImmediateAddressing>, 2, true, OpcodeMarker{ name: "adc", id: Imm}), (ror::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "ror", id: Acc}), (arr::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "arr", id: Imm}),
             (jmp::<IndirectAddressing>, 5, false, OpcodeMarker{ name: "jmp", id: Ind}), (adc::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "adc", id: Abs}), (ror::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "ror", id: Abs}), (rra::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "rra", id: Abs}),
@@ -186,7 +186,7 @@ fn set_zn_flags(c: &mut Cpu, val: u8) {
  */
 pub(super) fn push_word_le(c: &mut Cpu, w: u16) -> Result<(), CpuError> {
     let mem = c.bus.get_memory();
-    mem.write_word_le(0x100 + c.regs.s as usize, w)?;
+    mem.write_word_le(0x100 + (c.regs.s - 1) as usize, w)?;
     c.regs.s = c.regs.s.wrapping_sub(2);
     Ok(())
 }
@@ -216,7 +216,7 @@ fn pop_byte(c: &mut Cpu) -> Result<u8, CpuError> {
  */
 fn pop_word_le(c: &mut Cpu) -> Result<u16, CpuError> {
     let mem = c.bus.get_memory();
-    c.regs.s = c.regs.s.wrapping_sub(2);
+    c.regs.s = c.regs.s.wrapping_add(2);
     let w = mem.read_word_le(0x100 + c.regs.s as usize)?;
     Ok(w)
 }
@@ -1926,7 +1926,7 @@ fn iny<A: AddressingMode>(
         return Ok((A::len(), 0));
     }
 
-    c.regs.y = c.regs.x.wrapping_add(1);
+    c.regs.y = c.regs.y.wrapping_add(1);
     set_zn_flags(c, c.regs.y);
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -3046,7 +3046,7 @@ fn rts<A: AddressingMode>(
     }
 
     c.regs.pc = pop_word_le(c)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
 /**

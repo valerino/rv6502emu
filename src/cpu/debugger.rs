@@ -89,19 +89,25 @@ impl Debugger {
             // use provided address
             let addr = u16::from_str_radix(&s[1..], 16).unwrap_or_default();
             debug_out_text(&format!("cpu reset, restarting at PC=${:04x}.", addr));
-            if c.reset(Some(addr)).unwrap_or(()) == () {
-                self.cmd_invalid();
-                return false;
-            }
+            let _ = match c.reset(Some(addr)) {
+                Err(e) => {
+                    debug_out_text(&e);
+                    return false;
+                }
+                Ok(()) => (),
+            };
             return true;
         }
 
         // use the reset vector as default
         debug_out_text(&"cpu reset, restarting at RESET vector.");
-        if c.reset(None).unwrap_or(()) == () {
-            self.cmd_invalid();
-            return false;
-        }
+        let _ = match c.reset(None) {
+            Err(e) => {
+                debug_out_text(&e);
+                return false;
+            }
+            Ok(()) => (),
+        };
         return true;
     }
 

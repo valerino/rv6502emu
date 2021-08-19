@@ -433,11 +433,6 @@ impl Cpu {
                         false,
                     ) {
                         Ok((a, b)) => {
-                            if stdin_res == 'o' {
-                                // show registers too
-                                debug_out_registers(self);
-                            }
-
                             instr_size = a;
                             elapsed = b;
                             if bp_triggered == 1 {
@@ -468,6 +463,10 @@ impl Cpu {
                         // step, advance pc and increment the elapsed cycles (only if a breakpoint has not triggered!)
                         self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
                         self.cycles = self.cycles.wrapping_add(elapsed);
+                        if stdin_res == 'o' {
+                            // show registers too
+                            debug_out_registers(self);
+                        }
                         bp_triggered = 0;
                     } else {
                         // bp_triggered was 1 (a breakpoint has just hit)
