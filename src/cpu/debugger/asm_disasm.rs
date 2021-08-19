@@ -45,7 +45,7 @@ use std::io::{BufRead, Write};
 use std::str::SplitWhitespace;
 
 impl Debugger {
-    pub(super) fn cmd_disassemble(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) {
+    pub(super) fn cmd_disassemble(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         // check input
         let n_s = it.next().unwrap_or_default();
         let n = u16::from_str_radix(&n_s, 10).unwrap_or_default();
@@ -53,7 +53,7 @@ impl Debugger {
         if n == 0 {
             // invalid command, missing number of instructions to decode
             self.cmd_invalid();
-            return;
+            return false;
         }
         // save current pc
         let prev_pc = c.regs.pc;
@@ -64,13 +64,13 @@ impl Debugger {
             if addr_s.chars().next().unwrap_or_default() != '$' {
                 // invalid command, address invalid
                 self.cmd_invalid();
-                return;
+                return false;
             }
             match u16::from_str_radix(&addr_s[1..], 16) {
                 Err(_) => {
                     // invalid command, address invalid
                     self.cmd_invalid();
-                    return;
+                    return false;
                 }
                 Ok(a) => addr = a,
             }
@@ -92,7 +92,7 @@ impl Debugger {
             match c.fetch() {
                 Err(e) => {
                     debug_out_text(&e);
-                    return;
+                    return false;
                 }
                 Ok(ok) => b = ok,
             }
@@ -113,7 +113,7 @@ impl Debugger {
                 Ok(()) => (),
             };
             // decode
-            match opcode_f(c, &mut None, 0, false, true, false, false) {
+            match opcode_f(c, None, 0, false, true, false, false) {
                 Err(e) => {
                     debug_out_text(&e);
                     break;
@@ -138,6 +138,7 @@ impl Debugger {
 
         // restore pc in the end
         c.regs.pc = prev_pc;
+        return true;
     }
 
     /**
@@ -171,27 +172,27 @@ impl Debugger {
      * zpg,X	zeropage, X-indexed	OPC $LL,X	    operand is zeropage address; effective address is address incremented by X without carry
      * zpg,Y	zeropage, Y-indexed	OPC $LL,Y	    operand is zeropage address; effective address is address incremented by Y without carry
      */
-    pub(super) fn cmd_assemble(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) {
+    pub(super) fn cmd_assemble(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         // check input
         let addr_s = it.next().unwrap_or_default();
         let mut addr: u16;
         if addr_s.len() == 0 {
             // invalid command, address invalid
             self.cmd_invalid();
-            return;
+            return false;
         }
 
         // get the start address
         if addr_s.chars().next().unwrap_or_default() != '$' {
             // invalid command, address invalid
             self.cmd_invalid();
-            return;
+            return false;
         }
         let _ = match u16::from_str_radix(&addr_s[1..], 16) {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
-                return;
+                return false;
             }
             Ok(a) => addr = a,
         };
@@ -402,5 +403,6 @@ impl Debugger {
             }
             prev_addr = addr;
         }
+        return true;
     }
 }

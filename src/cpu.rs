@@ -38,9 +38,9 @@ use bitflags::bitflags;
 pub(crate) mod addressing_modes;
 
 pub mod cpu_error;
+pub mod debugger;
 use crate::utils::*;
 use cpu_error::{CpuError, CpuErrorType};
-mod debugger;
 
 /**
  * the cpu registers.
@@ -64,6 +64,7 @@ pub enum CpuOperation {
     Write,
     Irq,
     Nmi,
+    Brk,
 }
 
 bitflags! {
@@ -123,12 +124,27 @@ pub struct CpuCallbackContext {
 
 impl Display for CpuCallbackContext {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(
-            f,
-            "CALLBACK! type={:?}, address=${:04x}, value=${:02x}",
-            self.operation, self.address, self.value
-        )
-        .expect("");
+        match self.operation {
+            CpuOperation::Irq | CpuOperation::Nmi => {
+                write!(f, "CALLBACK! type={:?}", self.operation).expect("");
+            }
+            CpuOperation::Read | CpuOperation::Write => {
+                write!(
+                    f,
+                    "CALLBACK! type={:?}, address=${:04x}, value=${:02x}",
+                    self.operation, self.address, self.value
+                )
+                .expect("");
+            }
+            CpuOperation::Brk => {
+                write!(
+                    f,
+                    "CALLBACK! type={:?}, address=${:04x}",
+                    self.operation, self.address
+                )
+                .expect("");
+            }
+        }
         Ok(())
     }
 }
@@ -269,6 +285,14 @@ impl Cpu {
 
     /**
      * creates a new cpu instance, with the given Bus attached.
+     *
+     * the provided callback, if any, will be called *after* executing the following:
+     *
+     * - memory read
+     * - memory write
+     * - irq
+     * - nmi
+     * - brk
      */
     pub fn new(b: Box<dyn Bus>, cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>) -> Cpu {
         let c = Cpu {
@@ -287,7 +311,6 @@ impl Cpu {
     pub fn new_default(
         mem_size: usize,
         cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
-        debug: bool,
     ) -> Cpu {
         let m = super::memory::new_default(mem_size);
         let b = super::bus::new_default(m);
@@ -339,30 +362,34 @@ impl Cpu {
     }
 
     /**
-     * run the cpu for the given cycles, pass 0 to run indefinitely.
+     * run the cpu for the given cycles, optionally with a debugger attached.
+     *
+     * pass 0 to run indefinitely.
      *
      * > note that reset() must be called first to set the start address !
      */
-    pub fn run(&mut self, dbg: &mut Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
-        // check if we have a debugger
-        if dbg.is_some() {
-            // a debugger is attached
-            self.debug = true;
-        }
-
-        // loop
+    pub fn run(&mut self, debugger: Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
         let mut bp_triggered: i8 = 0;
         let mut rw_bp_triggered = false;
+
+        // construct an empty, disabled, debugger to use when None is passed in
+        if debugger.is_some() {
+            self.debug = true;
+        }
+        let mut empty_dbg = Debugger::new(false);
+        let dbg = debugger.unwrap_or(&mut empty_dbg);
+
+        // loop
         'interpreter: loop {
             // fetch an instruction
             let b = self.fetch()?;
 
             // handles debugger if any
-            let mut debugger_res = 'p';
+            let mut stdin_res = 'p';
             if self.debug {
-                debugger_res = dbg.as_mut().unwrap().handle_debugger_input_stdin(self)?;
+                stdin_res = dbg.parse_cmd_stdin(self)?;
             }
-            match debugger_res {
+            match stdin_res {
                 'p' | 'o' => {
                     // decode
                     let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing, mrk) =
@@ -381,29 +408,27 @@ impl Cpu {
                         Ok(()) => (),
                     };
 
-                    // check if we have a breakpoint at pc
+                    // check if we have a breakpoint at pc, irq, nmi
                     let mut bp_idx = 0;
                     if bp_triggered == 0 && self.debug {
-                        match dbg
-                            .as_mut()
-                            .unwrap()
-                            .has_enabled_breakpoint(self.regs.pc, BreakpointType::EXEC)
-                        {
+                        match dbg.has_enabled_breakpoint(
+                            self.regs.pc,
+                            BreakpointType::EXEC | BreakpointType::NMI | BreakpointType::IRQ,
+                        ) {
                             None => (),
                             Some(idx) => {
                                 bp_triggered = 1;
                                 bp_idx = idx;
-                                dbg.as_mut().unwrap().going = false;
+                                dbg.going = false;
                             }
                         };
                     }
-
                     // execute (or just decode, if breakpoint is set)
                     let mut instr_size: i8 = 0;
                     let mut elapsed: usize = 0;
                     let _ = match opcode_f(
                         self,
-                        dbg,
+                        Some(dbg),
                         opcode_cycles,
                         add_extra_cycle_on_page_crossing,
                         bp_triggered == 1, // when bp_triggered = 1, only decoding is done (no exec)
@@ -411,7 +436,7 @@ impl Cpu {
                         false,
                     ) {
                         Ok((a, b)) => {
-                            if debugger_res == 'o' {
+                            if stdin_res == 'o' {
                                 // show registers too
                                 debug_out_registers(self);
                             }
@@ -419,23 +444,21 @@ impl Cpu {
                             instr_size = a;
                             elapsed = b;
                             if bp_triggered == 1 {
-                                debug_out_text(&format!("EXEC breakpoint {} triggered!", bp_idx));
+                                debug_out_text(&format!("breakpoint {} triggered!", bp_idx));
                             }
                             if rw_bp_triggered {
                                 rw_bp_triggered = false;
                             }
                         }
                         Err(e) => {
-                            if bp_triggered == 0 && e.operation == CpuErrorType::RwBreakpoint {
+                            if bp_triggered == 0 && e.t == CpuErrorType::RwBreakpoint {
                                 // an r/w breakpoint has triggered, opcode has not executed.
                                 debug_out_text(&format!("R/W breakpoint {} triggered!", e.bp_idx));
                                 rw_bp_triggered = true;
                                 bp_triggered = 1;
-                                dbg.as_mut().unwrap().going = false;
-
-                                // disable to avoid it trigger in the next step
+                                dbg.going = false;
                             } else {
-                                if e.operation != CpuErrorType::RwBreakpoint {
+                                if e.t != CpuErrorType::RwBreakpoint {
                                     // report error and break
                                     debug_out_text(&e);
                                     break;
@@ -480,8 +503,10 @@ impl Cpu {
         // clear break flag
         self.set_cpu_flags(CpuFlags::B, false);
 
-        // set pc to vector
-        self.regs.pc = v;
+        // set pc to address contained at vector
+        let addr = self.bus.get_memory().read_word_le(v as usize)?;
+
+        self.regs.pc = addr;
         Ok(())
     }
 
@@ -489,13 +514,21 @@ impl Cpu {
      * triggers an irq.
      */
     pub fn irq(&mut self) -> Result<(), CpuError> {
-        self.irq_nmi(Vectors::IRQ as u16)
+        let res = self.irq_nmi(Vectors::IRQ as u16);
+
+        // call callback if any
+        self.call_callback(0, 0, CpuOperation::Irq);
+        res
     }
 
     /**
      * triggers an nmi.
      */
     pub fn nmi(&mut self) -> Result<(), CpuError> {
-        self.irq_nmi(Vectors::NMI as u16)
+        let res = self.irq_nmi(Vectors::NMI as u16);
+
+        // call callback if any
+        self.call_callback(0, 0, CpuOperation::Nmi);
+        res
     }
 }

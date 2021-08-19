@@ -78,37 +78,44 @@ impl Debugger {
     /**
      * perform cpu reset
      */
-    fn cmd_reset(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) {
+    fn cmd_reset(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         let s = it.next().unwrap_or_default();
         if s.len() > 0 {
             if s.chars().next().unwrap_or_default() != '$' {
                 // invalid
                 self.cmd_invalid();
-                return;
+                return false;
             }
             // use provided address
             let addr = u16::from_str_radix(&s[1..], 16).unwrap_or_default();
             debug_out_text(&format!("cpu reset, restarting at PC=${:04x}.", addr));
-            c.reset(Some(addr)).unwrap_or(());
-            return;
+            if c.reset(Some(addr)).unwrap_or(()) == () {
+                self.cmd_invalid();
+                return false;
+            }
+            return true;
         }
 
         // use the reset vector as default
         debug_out_text(&"cpu reset, restarting at RESET vector.");
-        c.reset(None).unwrap_or(());
+        if c.reset(None).unwrap_or(()) == () {
+            self.cmd_invalid();
+            return false;
+        }
+        return true;
     }
 
     /**
      * write byte value/s at the given address.
      */
-    fn cmd_edit_memory(&self, c: &mut Cpu, it: SplitWhitespace<'_>) {
+    fn cmd_edit_memory(&self, c: &mut Cpu, it: SplitWhitespace<'_>) -> bool {
         // turn to collection
         let col: Vec<&str> = it.collect();
         let l = col.len();
         if l < 2 {
             // invalid command
             self.cmd_invalid();
-            return;
+            return false;
         }
 
         // all items must start with $
@@ -116,7 +123,7 @@ impl Debugger {
             if item.chars().next().unwrap_or_default() != '$' {
                 // invalid item
                 self.cmd_invalid();
-                return;
+                return false;
             }
         }
         // last item is the address
@@ -126,7 +133,7 @@ impl Debugger {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
-                return;
+                return false;
             }
             Ok(a) => addr = a,
         };
@@ -142,7 +149,7 @@ impl Debugger {
         ) {
             Err(e) => {
                 debug_out_text(&e);
-                return;
+                return false;
             }
             Ok(()) => (),
         };
@@ -163,14 +170,14 @@ impl Debugger {
                 Err(_) => {
                     // invalid command, value invalid
                     self.cmd_invalid();
-                    return;
+                    return false;
                 }
                 Ok(a) => b = a,
             };
             let _ = match c.bus.get_memory().write_byte(addr as usize, b) {
                 Err(e) => {
                     debug_out_text(&e);
-                    return;
+                    return false;
                 }
                 Ok(_) => {
                     debug_out_text(&format!("written {} at ${:04x}.", item, addr));
@@ -180,12 +187,13 @@ impl Debugger {
             // next address
             addr = addr.wrapping_add(1);
         }
+        return true;
     }
 
     /**
      * save/hexdump memory
      */
-    fn cmd_dump_save_memory(&self, c: &mut Cpu, cmd: &str, mut it: SplitWhitespace<'_>) {
+    fn cmd_dump_save_memory(&self, c: &mut Cpu, cmd: &str, mut it: SplitWhitespace<'_>) -> bool {
         // check input
         let len_s = it.next().unwrap_or_default();
         let mem = c.bus.get_memory();
@@ -201,13 +209,13 @@ impl Debugger {
         if addr_s.chars().next().unwrap_or_default() != '$' {
             // invalid command, address invalid
             self.cmd_invalid();
-            return;
+            return false;
         }
         let _ = match usize::from_str_radix(&addr_s[1..], 16) {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
-                return;
+                return false;
             }
             Ok(a) => addr = a,
         };
@@ -221,7 +229,7 @@ impl Debugger {
             if file_path.len() == 0 {
                 // invalid command, path invalid
                 self.cmd_invalid();
-                return;
+                return false;
             }
         }
 
@@ -235,7 +243,7 @@ impl Debugger {
         ) {
             Err(e) => {
                 debug_out_text(&e);
-                return;
+                return false;
             }
             Ok(()) => (),
         };
@@ -250,14 +258,14 @@ impl Debugger {
                 Err(e) => {
                     // error
                     debug_out_text(&e);
-                    return;
+                    return false;
                 }
                 Ok(mut f) => {
                     let _ = match f.write_all(m_slice) {
                         Err(e) => {
                             // error
                             debug_out_text(&e);
-                            return;
+                            return false;
                         }
                         Ok(_) => debug_out_text(&"file saved!"),
                     };
@@ -272,15 +280,15 @@ impl Debugger {
                 .address_offset(addr as usize)
                 .row_width(16)
                 .finish();
-
             debug_out_text(&dump);
         }
+        return true;
     }
 
     /**
      * load file in memory
      */
-    fn cmd_load_memory(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) {
+    fn cmd_load_memory(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         // check input
         let addr_s = it.next().unwrap_or_default();
         let addr: u16;
@@ -289,13 +297,13 @@ impl Debugger {
         if addr_s.chars().next().unwrap_or_default() != '$' {
             // invalid command, address invalid
             self.cmd_invalid();
-            return;
+            return false;
         }
         let _ = match u16::from_str_radix(&addr_s[1..], 16) {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
-                return;
+                return false;
             }
             Ok(a) => addr = a,
         };
@@ -305,7 +313,7 @@ impl Debugger {
         if file_path.len() == 0 {
             // invalid command, path invalid
             self.cmd_invalid();
-            return;
+            return false;
         }
         // clear memory first
         let mem = c.bus.get_memory();
@@ -315,19 +323,20 @@ impl Debugger {
         match mem.load(file_path, addr as usize) {
             Err(e) => {
                 debug_out_text(&e);
-                return;
+                return false;
             }
             Ok(()) => debug_out_text(&"file loaded!"),
         };
+        return true;
     }
 
     /**
      * print help banner
      */
-    fn cmd_show_help(&self) {
+    fn cmd_show_help(&self) -> bool {
         println!("debugger supported commands:");
         println!("\ta <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.");
-        println!("\tb[x|r|w] .............................. add read/write/execute breakpoint at <$address>.",
+        println!("\tbx|br|bw|brw|bn|bq [$address].......... add exec/read/write/readwrite/execute/nmi/irq breakpoint. for anything except bn and bq, [$address] is mandatory.",
         );
         println!("\tbl .................................... show breakpoints.");
         println!("\tbe <n> ................................ enable breakpoint <n>.");
@@ -354,19 +363,20 @@ impl Debugger {
         println!("\tt [$address] .......................... reset (restart from given [$address], or defaults to reset vector).");
         println!("\tv <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).");
         println!("\tx <len> <$address> .................... hexdump <len> bytes at <$address>.");
+        return true;
     }
 
     /**
      * edit cpu registers
      */
-    fn cmd_edit_registers(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) {
+    fn cmd_edit_registers(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         // check input
         let reg = it.next().unwrap_or_default();
         let val = it.next().unwrap_or_default();
         if reg.len() == 0 || val.len() == 0 || val.chars().next().unwrap_or_default() != '$' {
             // invalid command, missing value
             self.cmd_invalid();
-            return;
+            return false;
         }
 
         // match registers and assign value
@@ -377,7 +387,7 @@ impl Debugger {
                 Err(_) => {
                     // invalid value
                     self.cmd_invalid();
-                    return;
+                    return false;
                 }
                 Ok(a) => {
                     if reg.eq("pc") {
@@ -386,7 +396,7 @@ impl Debugger {
                         if a > 0xff {
                             // invalid value
                             self.cmd_invalid();
-                            return;
+                            return false;
                         }
                         match r {
                             'a' => c.regs.a = a as u8,
@@ -402,10 +412,11 @@ impl Debugger {
             _ => {
                 // invalid command, register name invalid
                 self.cmd_invalid();
-                return;
+                return false;
             }
         }
         debug_out_text(&format!("register '{}' set to {}.", reg, val));
+        return true;
     }
 
     /**
@@ -413,13 +424,20 @@ impl Debugger {
      *
      * returns the debugger command ('q' on exit, '*' for no-op)
      */
-    pub fn handle_debugger_input_stdin(&mut self, c: &mut Cpu) -> Result<char, std::io::Error> {
+    pub fn parse_cmd_stdin(&mut self, c: &mut Cpu) -> Result<char, std::io::Error> {
+        if self.enabled {
+            if self.going {
+                // let it go!
+                return Ok('p');
+            }
+        }
+
         // read from stdin
         let mut cmd_string = String::new();
         print!("?:> ");
         io::stdout().flush().unwrap();
         io::stdin().lock().read_line(&mut cmd_string)?;
-        Ok(self.handle_debugger_input(c, &cmd_string))
+        Ok(self.parse_cmd(c, &cmd_string))
     }
 
     /**
@@ -427,7 +445,7 @@ impl Debugger {
      *
      * returns the debugger command ('q' on exit, '*' for no-op)
      */
-    pub fn handle_debugger_input(&mut self, c: &mut Cpu, cmd_string: &str) -> char {
+    pub fn parse_cmd(&mut self, c: &mut Cpu, cmd_string: &str) -> char {
         if self.enabled {
             if self.going {
                 // let it go!
@@ -453,7 +471,7 @@ impl Debugger {
                 self.cmd_enable_disable_delete_breakpoint(cmd, it);
                 return '*';
             }
-            "bx" | "br" | "bw" | "brw" | "bwr" => {
+            "bx" | "br" | "bw" | "brw" | "bq" | "bn" => {
                 self.cmd_add_breakpoint(c, cmd, it);
                 return '*';
             }

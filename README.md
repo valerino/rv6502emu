@@ -16,47 +16,54 @@ hopefully this works too, i plan to use it for a rust-based Atari2600 emulator :
 
 ## usage
 
+here's a [sample program](./src/bin/bin.rs) to use the emulator together with the [Debugger](./src/cpu/debugger.rs) API.
+
 ~~~
-    /**
-     * creates a new cpu instance, with the given Bus attached.
-     */
-    pub fn new(
-        b: Box<dyn Bus>,
-        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
-        debug: bool,
-    ) -> Cpu
+use rv6502emu::cpu::debugger::Debugger;
+use rv6502emu::cpu::Cpu;
+use rv6502emu::cpu::CpuCallbackContext;
 
-    /**
-     * creates a new cpu instance, with the given Bus attached, exposing a Memory of the given size.
-     */
-    pub fn new_default(
-        mem_size: usize,
-        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
-        debug: bool,
-    ) -> Cpu
+fn test_callback(_c: &mut Cpu, _cb: CpuCallbackContext) {
+    info!("{}", cb);
+}
 
-    /**
-     * resets the cpu setting all registers to the initial values.
-     * http://forum.6502.org/viewtopic.php?p=2959
-     */
-    pub fn reset(&mut self, start_address: Option<u16>) -> Result<(), CpuError>
+pub fn main() {
+    // create a cpu with default bus and 64k memory
+    let mut c = Cpu::new_default(0x10000, Some(test_callback));
 
-    /**
-     * run the cpu for the given cycles, pass 0 to run indefinitely.
-     *
-     * > note that reset() must be called first to set the start address !
-     */
-     pub fn run(&mut self, cycles: usize) -> Result<(), CpuError> {
-    
+    // enable stdout logger
+    c.enable_logging(true);
+
+    let mem = c.bus.get_memory();
+
+    // load test file
+    mem.load(
+        "./tests/6502_65C02_functional_tests/bin_files/6502_functional_test.bin",
+        0,
+    )
+    .unwrap();
+
+    // resets the cpu (use 0x400 as custom address for the Klaus test) and start execution
+    c.reset(Some(0x400)).unwrap();
+
+    // run with a debugger attached, setting an r/w breakpoint before starting
+    let mut dbg = Debugger::new(true);
+    dbg.parse_cmd(&mut c, "bw $200");
+
+    // run !
+    c.run(Some(&mut dbg), 0).unwrap();
+    // or, run without debugger attached
+    //c.run(None, 0).unwrap();
+}
 ~~~
 
-under debugger (debug=true), the following features are currently supported via command-line:
+under debugger CLI, the following features are currently supported via command-line:
 
 ~~~
 ?:> h
 debugger supported commands:
         a <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.
-        b[x|r|w] .............................. add read/write/execute breakpoint at <$address>.
+        bx|br|bw|brw|bn|bq [$address].......... add exec/read/write/readwrite/execute/nmi/irq breakpoint. for anything except bn and bq, [$address] is mandatory.
         bl .................................... show breakpoints.
         be <n> ................................ enable breakpoint <n>.
         bd <n> ................................ disable breakpoint<n>.
@@ -71,6 +78,7 @@ debugger supported commands:
         q ..................................... exit emulator.
         r ..................................... show registers.
         p ..................................... step next instruction.
+        o ......................................step next instruction and show registers.
         s <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.
         t [$address] .......................... reset (restart from given [$address], or defaults to reset vector).
         v <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).
@@ -83,6 +91,11 @@ git clone <thisrepo> --recurse-submodules
 # will run the debugger cli
 cargo run
 ~~~
+
+## status
+
+- need to fix bugs in the emulator
+- need to abstract better the Debugger API to plug a GUI.
 
 cheers :heart:,
 

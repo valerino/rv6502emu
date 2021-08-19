@@ -1,3 +1,4 @@
+use rv6502emu::cpu::debugger::Debugger;
 use rv6502emu::cpu::Cpu;
 use rv6502emu::cpu::CpuCallbackContext;
 
@@ -6,8 +7,8 @@ fn test_callback(_c: &mut Cpu, _cb: CpuCallbackContext) {
 }
 
 pub fn main() {
-    // create a cpu with default bus and 64k memory, stdin debugger enabled
-    let mut c = Cpu::new_default(0x10000, Some(test_callback), true);
+    // create a cpu with default bus and 64k memory
+    let mut c = Cpu::new_default(0x10000, Some(test_callback));
 
     // enable stdout logger
     c.enable_logging(true);
@@ -23,5 +24,13 @@ pub fn main() {
 
     // resets the cpu (use 0x400 as custom address for the Klaus test) and start execution
     c.reset(Some(0x400)).unwrap();
-    c.run(&mut None, 0).unwrap();
+
+    // run with a debugger attached, setting an r/w breakpoint before starting
+    let mut dbg = Debugger::new(true);
+    dbg.parse_cmd(&mut c, "bw $200");
+
+    // run !
+    c.run(Some(&mut dbg), 0).unwrap();
+    // or, run without debugger attached
+    //c.run(None, 0).unwrap();
 }

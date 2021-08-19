@@ -56,7 +56,7 @@ impl std::fmt::Display for ErrorType {
             ErrorType::MemoryWrite => write!(f, "MemWrite"),
             ErrorType::MemoryLoad => write!(f, "MemLoad"),
             ErrorType::InvalidOpcode => write!(f, "InvalidOpcode"),
-            ErrorType::RwBreakpoint => write!(f, "RW Breakpoint"),
+            ErrorType::RwBreakpoint => write!(f, "RwBreakpoint"),
         }
     }
 }
@@ -67,7 +67,7 @@ impl std::fmt::Display for ErrorType {
 #[derive(Debug)]
 pub struct Error {
     /// one of the defined ErrorType enums.
-    pub operation: ErrorType,
+    pub t: ErrorType,
     /// error address.
     pub address: usize,
     /// read/write requested access size which caused the error.\
@@ -85,23 +85,23 @@ impl std::error::Error for CpuError {}
 
 impl std::fmt::Display for CpuError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
-        if self.operation == ErrorType::MemoryLoad {
-            write!(
-                f,
-                "Error ({}), msg={}",
-                self.operation,
-                self.msg.as_ref().unwrap(),
-            )
-        } else if self.operation == ErrorType::InvalidOpcode {
-            write!(f, "Error ({})", self.operation,)
-        } else if self.operation == ErrorType::RwBreakpoint {
-            write!(f, "Error ({}), bp index={}", self.operation, self.bp_idx)
-        } else {
-            write!(
-                f,
-                "Error ({}) at address=${:x}, access size={}, max memory size=${:04x} ({})",
-                self.operation, self.address, self.access_size, self.mem_size, self.mem_size,
-            )
+        match self.t {
+            ErrorType::MemoryLoad => {
+                write!(f, "Error ({}), msg={}", self.t, self.msg.as_ref().unwrap(),)
+            }
+            ErrorType::InvalidOpcode => {
+                write!(f, "Error ({})", self.t,)
+            }
+            ErrorType::RwBreakpoint => {
+                write!(f, "Error ({}), bp index={}", self.t, self.bp_idx)
+            }
+            _ => {
+                write!(
+                    f,
+                    "Error ({}) at address=${:x}, access size={}, max memory size=${:04x} ({})",
+                    self.t, self.address, self.access_size, self.mem_size, self.mem_size,
+                )
+            }
         }
     }
 }
@@ -109,7 +109,7 @@ impl std::fmt::Display for CpuError {
 impl From<std::io::Error> for CpuError {
     fn from(err: std::io::Error) -> Self {
         let e = CpuError {
-            operation: ErrorType::MemoryLoad,
+            t: ErrorType::MemoryLoad,
             address: 0,
             mem_size: 0,
             access_size: 0,
@@ -125,7 +125,7 @@ impl From<std::io::Error> for CpuError {
  */
 pub(crate) fn new_invalid_opcode_error(address: usize) -> CpuError {
     let e = CpuError {
-        operation: ErrorType::InvalidOpcode,
+        t: ErrorType::InvalidOpcode,
         address: address,
         mem_size: 0,
         access_size: 0,
@@ -150,7 +150,7 @@ pub(crate) fn check_address_boundaries(
     if (address + access_size - 1 > mem_size) || (address + access_size - 1) > 0xffff {
         // report read or write error
         let e = CpuError {
-            operation: op,
+            t: op,
             address: address,
             mem_size: mem_size,
             access_size: access_size,
