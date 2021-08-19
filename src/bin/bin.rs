@@ -13,9 +13,8 @@ pub fn main() {
     // enable stdout logger
     c.enable_logging(true);
 
+    // load test file to memory
     let mem = c.bus.get_memory();
-
-    // load test file
     mem.load(
         "./tests/6502_65C02_functional_tests/bin_files/6502_functional_test.bin",
         0,
