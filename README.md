@@ -94,7 +94,7 @@ cargo run
 
 ## status
 
-- need to fix bugs in the emulator
+- need to fix bugs in the emulator.
 - need to abstract better the Debugger API to plug a GUI.
 
 cheers :heart:,

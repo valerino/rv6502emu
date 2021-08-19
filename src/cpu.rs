@@ -306,13 +306,10 @@ impl Cpu {
     }
 
     /**
-     * creates a new cpu instance, with the given Bus attached, exposing a Memory of the given size.
+     * creates a new cpu instance, with the given Bus attached, exposing a Memory.
      */
-    pub fn new_default(
-        mem_size: usize,
-        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
-    ) -> Cpu {
-        let m = super::memory::new_default(mem_size);
+    pub fn new_default(cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>) -> Cpu {
+        let m = super::memory::new_default();
         let b = super::bus::new_default(m);
         Cpu::new(b, cb)
     }

@@ -177,13 +177,14 @@ impl Memory for DefaultMemory {
 }
 
 /**
- * returns an istance of DefaultMemory with the given size.
+ * returns an istance of DefaultMemory
  *
  */
-pub fn new_default(size: usize) -> Box<dyn Memory> {
-    // create memory
+pub fn new_default() -> Box<dyn Memory> {
+    // create addressable 64k memory
+    let size = 0x10000;
     let mut m = DefaultMemory {
-        size: size,
+        size: size as usize,
         cur: Cursor::new(Vec::with_capacity(size)),
     };
     // and fill with zeroes

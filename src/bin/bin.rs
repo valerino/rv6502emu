@@ -7,8 +7,8 @@ fn test_callback(_c: &mut Cpu, _cb: CpuCallbackContext) {
 }
 
 pub fn main() {
-    // create a cpu with default bus and 64k memory
-    let mut c = Cpu::new_default(0x10000, Some(test_callback));
+    // create a cpu with default bus, including max addressable memory (64k)
+    let mut c = Cpu::new_default(Some(test_callback));
 
     // enable stdout logger
     c.enable_logging(true);
