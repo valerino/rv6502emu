@@ -31,8 +31,7 @@
 use crate::cpu::addressing_modes;
 use crate::cpu::addressing_modes::AddressingModeId::*;
 use crate::cpu::addressing_modes::*;
-use crate::cpu::cpu_error;
-use crate::cpu::cpu_error::CpuError;
+use crate::cpu::cpu_error::{CpuError, CpuErrorType};
 use crate::cpu::debugger::Debugger;
 use crate::cpu::CpuFlags;
 use crate::cpu::{Cpu, Vectors};
@@ -63,7 +62,7 @@ lazy_static! {
      *
      * for clarity, each Vec element is a tuple defined as this (with named return values):
      *
-     * (< fn(c: &mut Cpu, d: Option<& Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool, rw_bp_triggered: bool, quiet: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, d: Option<& Debugger>, in_cycles: usize, add_extra_cycle:bool) >)
+     * (< fn(c: &mut Cpu, d: Option<& Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool, quiet: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, d: Option<& Debugger>, in_cycles: usize, add_extra_cycle:bool) >)
      *
      * all the opcodes info are taken from, in no particular order :
      *
@@ -73,7 +72,7 @@ lazy_static! {
      * - http://www.obelisk.me.uk/6502/reference.html
      * - [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
      */
-    pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool, rw_bp_triggered: bool, quiet: bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
+    pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool, quiet: bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
         vec![
             // 0x0 - 0xf
             (brk::<ImpliedAddressing>, 7, false, OpcodeMarker{ name: "brk", id: Imp}), (ora::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "ora", id: Xin}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (slo::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "slo", id: Xin}),
@@ -259,7 +258,6 @@ fn adc<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
@@ -273,7 +271,7 @@ fn adc<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // perform the addition (regs.a+b+C)
     let mut sum: u16;
@@ -330,7 +328,6 @@ fn ahx<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
@@ -357,7 +354,7 @@ fn ahx<A: AddressingMode>(
     let res = c.regs.a & c.regs.x & h.wrapping_add(1);
 
     // store
-    A::store(c, d, tgt, rw_bp_triggered, res)?;
+    A::store(c, d, tgt, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -381,7 +378,6 @@ fn alr<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -395,11 +391,11 @@ fn alr<A: AddressingMode>(
 
     // and (preserve flags, n and z are set in lfr)
     let prev_p = c.regs.p;
-    and::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    and::<A>(c, d, 0, false, decode_only, true)?;
     c.regs.p = prev_p;
 
     // lsr A
-    lsr::<AccumulatorAddressing>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    lsr::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -424,7 +420,6 @@ fn anc<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -437,15 +432,7 @@ fn anc<A: AddressingMode>(
     }
 
     // and
-    and::<A>(
-        c,
-        d,
-        in_cycles,
-        extra_cycle,
-        decode_only,
-        rw_bp_triggered,
-        true,
-    )?;
+    and::<A>(c, d, in_cycles, extra_cycle, decode_only, true)?;
     c.set_cpu_flags(CpuFlags::C, utils::is_signed(c.regs.a));
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -486,7 +473,6 @@ fn and<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -499,7 +485,7 @@ fn and<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // A AND M -> A
     c.regs.a = c.regs.a & b;
@@ -535,7 +521,6 @@ fn arr<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -549,11 +534,11 @@ fn arr<A: AddressingMode>(
 
     if !c.is_cpu_flag_set(CpuFlags::D) {
         // and
-        and::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+        and::<A>(c, d, 0, false, decode_only, true)?;
 
         // ror A
         let prev_a = c.regs.a;
-        ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+        ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
 
         // set carry and overflow
         c.set_cpu_flags(CpuFlags::C, utils::is_signed(prev_a));
@@ -566,9 +551,9 @@ fn arr<A: AddressingMode>(
     } else {
         // decimal
         // and
-        and::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+        and::<A>(c, d, 0, false, decode_only, true)?;
         let and_res = c.regs.a;
-        ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+        ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
 
         // fix for decimal
 
@@ -630,7 +615,6 @@ fn asl<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -643,7 +627,7 @@ fn asl<A: AddressingMode>(
     }
 
     // read operand
-    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let mut b = A::load(c, d, tgt)?;
     c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
 
     // shl
@@ -652,7 +636,7 @@ fn asl<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
 
     // store back
-    A::store(c, d, tgt, rw_bp_triggered, b)?;
+    A::store(c, d, tgt, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -681,7 +665,6 @@ fn bcc<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -694,7 +677,7 @@ fn bcc<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // branch
     let mut cycles = in_cycles;
@@ -739,7 +722,6 @@ fn bcs<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -752,7 +734,7 @@ fn bcs<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // branch
     let mut cycles = in_cycles;
@@ -796,7 +778,6 @@ fn beq<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -809,7 +790,7 @@ fn beq<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // branch
     let mut cycles = in_cycles;
@@ -860,7 +841,6 @@ fn bit<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -873,7 +853,7 @@ fn bit<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     let and_res = c.regs.a & b;
 
@@ -908,7 +888,6 @@ fn bmi<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -921,7 +900,7 @@ fn bmi<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // branch
     let mut cycles = in_cycles;
@@ -964,7 +943,6 @@ fn bne<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -977,7 +955,7 @@ fn bne<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // branch
     let mut cycles = in_cycles;
@@ -1021,7 +999,6 @@ fn bpl<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1034,7 +1011,7 @@ fn bpl<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // branch
     let mut cycles = in_cycles;
@@ -1077,7 +1054,6 @@ fn brk<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1127,7 +1103,6 @@ fn bvc<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1140,7 +1115,7 @@ fn bvc<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // branch
     let mut cycles = in_cycles;
@@ -1184,7 +1159,6 @@ fn bvs<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1197,7 +1171,7 @@ fn bvs<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // branch
     let mut cycles = in_cycles;
@@ -1241,7 +1215,6 @@ fn clc<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1283,7 +1256,6 @@ fn cld<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1325,7 +1297,6 @@ fn cli<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1367,7 +1338,6 @@ fn clv<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1418,7 +1388,6 @@ fn cmp<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1431,7 +1400,7 @@ fn cmp<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     let res = c.regs.a.wrapping_sub(b);
     c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
@@ -1470,7 +1439,6 @@ fn cpx<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1483,7 +1451,7 @@ fn cpx<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     let res = c.regs.x.wrapping_sub(b);
     c.set_cpu_flags(CpuFlags::C, c.regs.x >= b);
@@ -1522,7 +1490,6 @@ fn cpy<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1535,7 +1502,7 @@ fn cpy<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     let res = c.regs.y.wrapping_sub(b);
     c.set_cpu_flags(CpuFlags::C, c.regs.y >= b);
@@ -1571,7 +1538,6 @@ fn dcp<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1585,9 +1551,9 @@ fn dcp<A: AddressingMode>(
 
     // perform dec + cmp internally (flags are set according to cmp, so save before)
     let prev_p = c.regs.p;
-    dec::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    dec::<A>(c, d, 0, false, decode_only, true)?;
     c.regs.p = prev_p;
-    cmp::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    cmp::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1621,7 +1587,6 @@ fn dec<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1634,12 +1599,12 @@ fn dec<A: AddressingMode>(
     }
 
     // read operand
-    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let mut b = A::load(c, d, tgt)?;
     b = b.wrapping_sub(1);
     set_zn_flags(c, b);
 
     // store back
-    A::store(c, d, tgt, false, b)?;
+    A::store(c, d, tgt, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1670,7 +1635,6 @@ fn dex<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1715,7 +1679,6 @@ fn dey<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1768,7 +1731,6 @@ fn eor<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1781,7 +1743,7 @@ fn eor<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     c.regs.a = c.regs.a ^ b;
     set_zn_flags(c, c.regs.a);
@@ -1818,7 +1780,6 @@ fn inc<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1831,13 +1792,13 @@ fn inc<A: AddressingMode>(
     }
 
     // read operand
-    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let mut b = A::load(c, d, tgt)?;
 
     b = b.wrapping_add(1);
     set_zn_flags(c, b);
 
     // store back
-    A::store(c, d, tgt, rw_bp_triggered, b)?;
+    A::store(c, d, tgt, b)?;
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -1869,7 +1830,6 @@ fn inx<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1914,7 +1874,6 @@ fn iny<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1959,7 +1918,6 @@ fn isc<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -1973,14 +1931,14 @@ fn isc<A: AddressingMode>(
 
     // perform inc + sbc internally (sbc sets p, preserve carry flag after inc)
     let prev_p = c.regs.p;
-    inc::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    inc::<A>(c, d, 0, false, decode_only, true)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
     c.regs.p = prev_p;
     c.set_cpu_flags(CpuFlags::C, is_c_set);
 
-    sbc::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    sbc::<A>(c, d, 0, false, decode_only, true)?;
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2011,7 +1969,6 @@ fn jmp<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2054,7 +2011,6 @@ fn jsr<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2082,10 +2038,9 @@ fn jsr<A: AddressingMode>(
 fn kil<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _: usize,
-    _: bool,
+    _in_cycles: usize,
+    _extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     // this is an invalid opcode and emulation should be halted!
@@ -2098,7 +2053,9 @@ fn kil<A: AddressingMode>(
     }
 
     // invalid !
-    Err(cpu_error::new_invalid_opcode_error(c.regs.pc as usize))
+    let mut e = CpuError::new_default(CpuErrorType::InvalidOpcode, None);
+    e.address = c.regs.pc as usize;
+    Err(e)
 }
 
 /**
@@ -2122,7 +2079,6 @@ fn las<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2135,7 +2091,7 @@ fn las<A: AddressingMode>(
     }
 
     // get operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
     let res = b & c.regs.s;
 
     c.regs.a = res;
@@ -2170,7 +2126,6 @@ fn lax<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2183,7 +2138,7 @@ fn lax<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     c.regs.a = b;
     c.regs.x = b;
@@ -2223,7 +2178,6 @@ fn lda<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2236,7 +2190,7 @@ fn lda<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
     c.regs.a = b;
 
     set_zn_flags(c, c.regs.a);
@@ -2273,7 +2227,6 @@ fn ldx<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2286,7 +2239,7 @@ fn ldx<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
     c.regs.x = b;
 
     set_zn_flags(c, c.regs.x);
@@ -2322,7 +2275,6 @@ fn ldy<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2335,7 +2287,7 @@ fn ldy<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
     c.regs.y = b;
 
     set_zn_flags(c, c.regs.y);
@@ -2373,7 +2325,6 @@ fn lsr<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2386,7 +2337,7 @@ fn lsr<A: AddressingMode>(
     }
 
     // read operand
-    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let mut b = A::load(c, d, tgt)?;
 
     // save bit 0 in the carry
     c.set_cpu_flags(CpuFlags::C, b & 1 != 0);
@@ -2397,7 +2348,7 @@ fn lsr<A: AddressingMode>(
     set_zn_flags(c, b);
 
     // store back
-    A::store(c, d, tgt, rw_bp_triggered, b)?;
+    A::store(c, d, tgt, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2423,7 +2374,6 @@ fn lxa<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2436,7 +2386,7 @@ fn lxa<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // N and Z are set according to the value of the accumulator before the instruction executed
     set_zn_flags(c, c.regs.a);
@@ -2476,7 +2426,6 @@ fn nop<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2525,7 +2474,6 @@ fn ora<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2538,7 +2486,7 @@ fn ora<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
     c.regs.a |= b;
     set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -2569,7 +2517,6 @@ fn pha<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2612,7 +2559,6 @@ fn php<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2655,7 +2601,6 @@ fn pla<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2699,7 +2644,6 @@ fn plp<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2746,7 +2690,6 @@ fn rla<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2760,14 +2703,14 @@ fn rla<A: AddressingMode>(
 
     // perform rol + and internally
     let prev_p = c.regs.p;
-    rol::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    rol::<A>(c, d, 0, false, decode_only, true)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
     c.regs.p = prev_p;
     c.set_cpu_flags(CpuFlags::C, is_c_set);
     // n and z are set according to AND
-    and::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    and::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2802,7 +2745,6 @@ fn rol<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2815,7 +2757,7 @@ fn rol<A: AddressingMode>(
     }
 
     // read operand
-    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let mut b = A::load(c, d, tgt)?;
 
     // save current carry
     let carry = c.is_cpu_flag_set(CpuFlags::C);
@@ -2833,7 +2775,7 @@ fn rol<A: AddressingMode>(
     }
 
     // store back
-    A::store(c, d, tgt, rw_bp_triggered, b)?;
+    A::store(c, d, tgt, b)?;
     c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
     c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -2863,7 +2805,6 @@ fn ror<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2876,7 +2817,7 @@ fn ror<A: AddressingMode>(
     }
 
     // read operand
-    let mut b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let mut b = A::load(c, d, tgt)?;
 
     // save current carry
     let carry = c.is_cpu_flag_set(CpuFlags::C);
@@ -2896,7 +2837,7 @@ fn ror<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::C, is_bit_0_set == 1);
 
     // store back
-    A::store(c, d, tgt, rw_bp_triggered, b)?;
+    A::store(c, d, tgt, b)?;
     c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
     c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -2928,7 +2869,6 @@ fn rra<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -2942,7 +2882,7 @@ fn rra<A: AddressingMode>(
 
     // perform ror + adc internally
     let prev_p = c.regs.p;
-    ror::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    ror::<A>(c, d, 0, false, decode_only, true)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -2950,7 +2890,7 @@ fn rra<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::C, is_c_set);
 
     // all other flags are set by adc
-    adc::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    adc::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2983,7 +2923,6 @@ fn rti<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3033,7 +2972,6 @@ fn rts<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3072,7 +3010,6 @@ fn sax<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3085,7 +3022,7 @@ fn sax<A: AddressingMode>(
     }
 
     let b = c.regs.a & c.regs.x;
-    A::store(c, d, tgt, rw_bp_triggered, b)?;
+    A::store(c, d, tgt, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3116,7 +3053,6 @@ fn sbc<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     // get target_address
@@ -3130,7 +3066,7 @@ fn sbc<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // perform non-bcd subtraction (regs.a-b-1+C)
     let sub: u16 = (c.regs.a as u16)
@@ -3187,7 +3123,6 @@ fn sbx<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3200,7 +3135,7 @@ fn sbx<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // and
     let and_res = c.regs.a & c.regs.x;
@@ -3237,7 +3172,6 @@ fn sec<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3279,7 +3213,6 @@ fn sed<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3321,7 +3254,6 @@ fn sei<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3361,7 +3293,6 @@ fn shx<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3386,7 +3317,7 @@ fn shx<A: AddressingMode>(
     let res = c.regs.x & h.wrapping_add(1);
 
     // store
-    A::store(c, d, tgt, rw_bp_triggered, res)?;
+    A::store(c, d, tgt, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3412,7 +3343,6 @@ fn shy<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3437,7 +3367,7 @@ fn shy<A: AddressingMode>(
     let res = c.regs.y & h.wrapping_add(1);
 
     // store
-    A::store(c, d, tgt, rw_bp_triggered, res)?;
+    A::store(c, d, tgt, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3467,7 +3397,6 @@ fn slo<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3481,7 +3410,7 @@ fn slo<A: AddressingMode>(
 
     // perform asl + ora internally
     let prev_p = c.regs.p;
-    asl::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    asl::<A>(c, d, 0, false, decode_only, true)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -3489,7 +3418,7 @@ fn slo<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::C, is_c_set);
 
     // other flags are set by ora
-    ora::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    ora::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3519,7 +3448,6 @@ fn sre<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3533,7 +3461,7 @@ fn sre<A: AddressingMode>(
 
     // perform lsr + eor internally
     let prev_p = c.regs.p;
-    lsr::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    lsr::<A>(c, d, 0, false, decode_only, true)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -3541,7 +3469,7 @@ fn sre<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::C, is_c_set);
 
     // other flags are set by eor
-    eor::<A>(c, d, 0, false, decode_only, rw_bp_triggered, true)?;
+    eor::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3569,7 +3497,6 @@ fn sta<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3582,7 +3509,7 @@ fn sta<A: AddressingMode>(
     }
 
     // store A in memory
-    A::store(c, d, tgt, rw_bp_triggered, c.regs.a)?;
+    A::store(c, d, tgt, c.regs.a)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3610,7 +3537,6 @@ fn stx<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3623,7 +3549,7 @@ fn stx<A: AddressingMode>(
     }
 
     // store X in memory
-    A::store(c, d, tgt, rw_bp_triggered, c.regs.x)?;
+    A::store(c, d, tgt, c.regs.x)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3651,7 +3577,6 @@ fn sty<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3664,7 +3589,7 @@ fn sty<A: AddressingMode>(
     }
 
     // store y in memory
-    A::store(c, d, tgt, rw_bp_triggered, c.regs.y)?;
+    A::store(c, d, tgt, c.regs.y)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3690,7 +3615,6 @@ fn tas<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3716,7 +3640,7 @@ fn tas<A: AddressingMode>(
     let res = c.regs.s & h.wrapping_add(1);
 
     // store
-    A::store(c, d, tgt, rw_bp_triggered, res)?;
+    A::store(c, d, tgt, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3747,7 +3671,6 @@ fn tax<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3790,7 +3713,6 @@ fn tay<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3834,7 +3756,6 @@ fn tsx<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3878,7 +3799,6 @@ fn txa<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3922,7 +3842,6 @@ fn txs<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -3965,7 +3884,6 @@ fn tya<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    _: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -4010,7 +3928,6 @@ fn xaa<A: AddressingMode>(
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
-    rw_bp_triggered: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
@@ -4023,7 +3940,7 @@ fn xaa<A: AddressingMode>(
     }
 
     // read operand
-    let b = A::load(c, d, tgt, rw_bp_triggered)?;
+    let b = A::load(c, d, tgt)?;
 
     // N and Z are set according to the value of the accumulator before the instruction executed
     set_zn_flags(c, c.regs.a);

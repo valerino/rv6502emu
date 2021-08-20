@@ -35,7 +35,7 @@ use std::fmt;
  * type of cpu error.
  */
 #[derive(PartialEq, Debug)]
-pub enum ErrorType {
+pub enum CpuErrorType {
     /// reads from memory.
     MemoryRead,
     /// writes to memory.
@@ -46,17 +46,19 @@ pub enum ErrorType {
     InvalidOpcode,
     /// read/write breakpoint hit.
     RwBreakpoint,
+    /// generic error
+    Generic,
 }
-pub type CpuErrorType = self::ErrorType;
 
-impl std::fmt::Display for ErrorType {
+impl std::fmt::Display for CpuErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorType::MemoryRead => write!(f, "MemRead"),
-            ErrorType::MemoryWrite => write!(f, "MemWrite"),
-            ErrorType::MemoryLoad => write!(f, "MemLoad"),
-            ErrorType::InvalidOpcode => write!(f, "InvalidOpcode"),
-            ErrorType::RwBreakpoint => write!(f, "RwBreakpoint"),
+            CpuErrorType::MemoryRead => write!(f, "MemRead"),
+            CpuErrorType::MemoryWrite => write!(f, "MemWrite"),
+            CpuErrorType::MemoryLoad => write!(f, "MemLoad"),
+            CpuErrorType::InvalidOpcode => write!(f, "InvalidOpcode"),
+            CpuErrorType::RwBreakpoint => write!(f, "RwBreakpoint"),
+            CpuErrorType::Generic => write!(f, "Generic"),
         }
     }
 }
@@ -65,34 +67,43 @@ impl std::fmt::Display for ErrorType {
  * to report errors within the whole crate
  */
 #[derive(Debug)]
-pub struct Error {
+pub struct CpuError {
     /// one of the defined ErrorType enums.
-    pub t: ErrorType,
+    pub t: CpuErrorType,
     /// error address.
     pub address: usize,
-    /// read/write requested access size which caused the error.\
+    /// read/write requested access size which caused the error.
     pub access_size: usize,
     /// whole memory size.
     pub mem_size: usize,
-    /// the breakpoint index which triggered, if operation is RwBreakpoint
+    /// the breakpoint index which triggered, if t is RwBreakpoint.
     pub bp_idx: i8,
+    /// triggering instruction size, if t is RwBreakpoint.
+    pub instr_size: i8,
     /// an optional message.
     pub msg: Option<String>,
 }
-pub type CpuError = self::Error;
 
 impl std::error::Error for CpuError {}
 
 impl std::fmt::Display for CpuError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         match self.t {
-            ErrorType::MemoryLoad => {
+            CpuErrorType::MemoryLoad => {
                 write!(f, "Error ({}), msg={}", self.t, self.msg.as_ref().unwrap(),)
             }
-            ErrorType::InvalidOpcode => {
+            CpuErrorType::InvalidOpcode => {
                 write!(f, "Error ({})", self.t,)
             }
-            ErrorType::RwBreakpoint => {
+            CpuErrorType::Generic => {
+                write!(
+                    f,
+                    "Error ({}) {}",
+                    self.t,
+                    self.msg.as_ref().unwrap_or(&String::from(""))
+                )
+            }
+            CpuErrorType::RwBreakpoint => {
                 write!(f, "Error ({}), bp index={}", self.t, self.bp_idx)
             }
             _ => {
@@ -109,30 +120,33 @@ impl std::fmt::Display for CpuError {
 impl From<std::io::Error> for CpuError {
     fn from(err: std::io::Error) -> Self {
         let e = CpuError {
-            t: ErrorType::MemoryLoad,
+            t: CpuErrorType::MemoryLoad,
             address: 0,
             mem_size: 0,
             access_size: 0,
+            instr_size: 0,
             bp_idx: 0,
             msg: Some(err.to_string()),
         };
         e
     }
 }
-
-/**
- * creates an invalid opcode error.
- */
-pub(crate) fn new_invalid_opcode_error(address: usize) -> CpuError {
-    let e = CpuError {
-        t: ErrorType::InvalidOpcode,
-        address: address,
-        mem_size: 0,
-        access_size: 0,
-        bp_idx: 0,
-        msg: None,
-    };
-    return e;
+impl CpuError {
+    /**
+     * constructs a new default error, with optional message
+     */
+    pub fn new_default(t: CpuErrorType, m: Option<String>) -> Self {
+        let e = CpuError {
+            t: t,
+            address: 0,
+            mem_size: 0,
+            access_size: 0,
+            instr_size: 0,
+            bp_idx: 0,
+            msg: m,
+        };
+        e
+    }
 }
 
 /**
@@ -143,9 +157,9 @@ pub(crate) fn check_address_boundaries(
     address: usize,
     access_size: usize,
     // we use the ErrorType to identify the operation (read/write/load)
-    op: ErrorType,
+    op: CpuErrorType,
     msg: Option<String>,
-) -> Result<(), Error> {
+) -> Result<(), CpuError> {
     // check if memory access overflows
     if (address + access_size - 1 > mem_size) || (address + access_size - 1) > 0xffff {
         // report read or write error
@@ -154,6 +168,7 @@ pub(crate) fn check_address_boundaries(
             address: address,
             mem_size: mem_size,
             access_size: access_size,
+            instr_size: 0,
             bp_idx: 0,
             msg: msg,
         };
@@ -169,9 +184,9 @@ pub(crate) fn check_opcode_boundaries(
     mem_size: usize,
     address: usize,
     addr_mode: AddressingModeId,
-    op: ErrorType,
+    op: CpuErrorType,
     msg: Option<String>,
-) -> Result<(), Error> {
+) -> Result<(), CpuError> {
     match addr_mode {
         AddressingModeId::Imp | AddressingModeId::Acc => {
             check_address_boundaries(mem_size, address, 1, op, msg)?;

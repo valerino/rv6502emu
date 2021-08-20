@@ -135,7 +135,7 @@ impl Display for Bp {
 
 impl Debugger {
     /**
-     * add a breakpoint
+     * add a breakpoint.
      *
      * > exec, nmi, irq breakpoints triggers BEFORE the instruction executes. read/write breakpoints triggers AFTER the instruction executed.
      */

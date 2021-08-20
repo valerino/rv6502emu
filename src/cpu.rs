@@ -366,8 +366,8 @@ impl Cpu {
      * > note that reset() must be called first to set the start address !
      */
     pub fn run(&mut self, debugger: Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
-        let mut bp_triggered: i8 = 0;
-        let mut rw_bp_triggered = false;
+        let mut bp_rw_triggered = false;
+        let mut instr_size: i8 = 0;
 
         // construct an empty, disabled, debugger to use when None is passed in
         if debugger.is_some() {
@@ -378,7 +378,7 @@ impl Cpu {
 
         // loop
         'interpreter: loop {
-            if dbg.show_registers_before_opcode {
+            if dbg.show_registers_before_opcode && !bp_rw_triggered {
                 // show registers
                 debug_out_registers(self);
             }
@@ -404,7 +404,7 @@ impl Cpu {
                 Ok(()) => (),
             };
 
-            let _ = match opcode_f(self, Some(dbg), 0, false, true, false, false) {
+            let _ = match opcode_f(self, Some(dbg), 0, false, true, bp_rw_triggered) {
                 Err(e) => {
                     debug_out_text(&e);
                     break;
@@ -413,32 +413,45 @@ impl Cpu {
             };
 
             // check if we have a breakpoint at pc
-            let mut bp_idx = 0;
-            if bp_triggered == 0 && self.debug {
+            if self.debug {
                 match dbg.has_enabled_breakpoint(
                     self.regs.pc,
                     BreakpointType::EXEC | BreakpointType::NMI | BreakpointType::IRQ,
                 ) {
                     None => (),
                     Some(idx) => {
-                        bp_triggered = 1;
-                        bp_idx = idx;
                         dbg.going = false;
-                        debug_out_text(&format!("breakpoint {} triggered!", bp_idx));
+                        debug_out_text(&format!("breakpoint {} triggered!", idx));
                     }
                 };
             }
 
             // handles debugger if any
-            let mut stdin_res = 'p';
+            let mut cmd = String::from("p");
+            let mut cmd_res = false;
             if self.debug {
-                stdin_res = dbg.parse_cmd_stdin(self)?;
+                while !cmd_res {
+                    match dbg.parse_cmd_stdin(self) {
+                        Err(_) => {
+                            break 'interpreter;
+                        }
+                        Ok((a, b)) => {
+                            cmd = a;
+                            cmd_res = b;
+                        }
+                    };
+                }
             }
+            match cmd.as_ref() {
+                "p" => {
+                    if bp_rw_triggered {
+                        // advance pc of the previous instruction size, flag off the bp rw trigger, and restart loop
+                        self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
+                        bp_rw_triggered = false;
+                        continue 'interpreter;
+                    }
 
-            match stdin_res {
-                'p' => {
                     // execute
-                    let mut instr_size: i8 = 0;
                     let mut elapsed: usize = 0;
                     let _ = match opcode_f(
                         self,
@@ -446,23 +459,22 @@ impl Cpu {
                         opcode_cycles,
                         add_extra_cycle_on_page_crossing,
                         false, // decode only
-                        false, //rw_bp_triggered,
                         true,  // quiet, do not print instruction again
                     ) {
                         Ok((a, b)) => {
                             instr_size = a;
                             elapsed = b;
-                            /*if rw_bp_triggered {
-                                rw_bp_triggered = false;
-                            }*/
                         }
                         Err(e) => {
-                            if bp_triggered == 0 && e.t == CpuErrorType::RwBreakpoint {
+                            if e.t == CpuErrorType::RwBreakpoint {
                                 // an r/w breakpoint has triggered, opcode has not executed.
                                 debug_out_text(&format!("R/W breakpoint {} triggered!", e.bp_idx));
                                 //rw_bp_triggered = true;
-                                bp_triggered = 1;
+                                instr_size = e.instr_size;
+                                elapsed = opcode_cycles as usize
+                                    + add_extra_cycle_on_page_crossing as usize;
                                 dbg.going = false;
+                                bp_rw_triggered = true;
                             } else {
                                 if e.t != CpuErrorType::RwBreakpoint {
                                     // report error and break
@@ -473,28 +485,21 @@ impl Cpu {
                         }
                     };
 
-                    /*
-                    if bp_triggered == 0 || bp_triggered == 2 {
-                        // step, advance pc and increment the elapsed cycles (only if a breakpoint has not triggered!)
+                    // step, advance pc and increment the elapsed cycles
+                    if !bp_rw_triggered {
+                        // increment pc only if an rw bp has NOT triggered
                         self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
-                        self.cycles = self.cycles.wrapping_add(elapsed);
-                        bp_triggered = 0;
-                    } else {
-                        // bp_triggered was 1 (a breakpoint has just hit)
-                        bp_triggered = 2;
-                    }*/
-                    // step, advance pc and increment the elapsed cycles (only if a breakpoint has not triggered!)
-                    self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
+                    }
                     self.cycles = self.cycles.wrapping_add(elapsed);
                     if cycles != 0 && elapsed >= cycles {
                         break 'interpreter;
                     }
                 }
-                'q' => {
+                "q" => {
                     // gracefully exit
                     break 'interpreter;
                 }
-                '*' => {}
+                "*" => {}
                 _ => {}
             }
         }

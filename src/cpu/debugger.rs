@@ -431,13 +431,13 @@ impl Debugger {
     /**
      * handle debugger input from stdin.
      *
-     * returns the debugger command ('q' on exit, '*' for no-op)
+     * returns a tuple with the debugger command ("q" on exit, "*"" for no-op, ...) and a boolean to indicate an error
      */
-    pub fn parse_cmd_stdin(&mut self, c: &mut Cpu) -> Result<char, std::io::Error> {
+    pub fn parse_cmd_stdin(&mut self, c: &mut Cpu) -> Result<(String, bool), std::io::Error> {
         if self.enabled {
             if self.going {
                 // let it go!
-                return Ok('p');
+                return Ok((String::from("p"), true));
             }
         }
 
@@ -454,11 +454,11 @@ impl Debugger {
      *
      * returns the debugger command ('q' on exit, '*' for no-op)
      */
-    pub fn parse_cmd(&mut self, c: &mut Cpu, cmd_string: &str) -> char {
+    pub fn parse_cmd(&mut self, c: &mut Cpu, cmd_string: &str) -> (String, bool) {
         if self.enabled {
             if self.going {
                 // let it go!
-                return 'p';
+                return (String::from("p"), true);
             }
         }
 
@@ -469,62 +469,58 @@ impl Debugger {
         match cmd {
             // assemble
             "a" => {
-                self.cmd_assemble(c, it);
-                return '*';
+                return (String::from("*"), self.cmd_assemble(c, it));
             }
             "bc" => {
-                self.cmd_clear_breakpoints();
-                return '*';
+                return (String::from("*"), self.cmd_clear_breakpoints());
             }
             "be" | "bd" | "bdel" => {
-                self.cmd_enable_disable_delete_breakpoint(cmd, it);
-                return '*';
+                return (
+                    String::from("*"),
+                    self.cmd_enable_disable_delete_breakpoint(cmd, it),
+                );
             }
             "bx" | "br" | "bw" | "brw" | "bq" | "bn" => {
-                self.cmd_add_breakpoint(c, cmd, it);
-                return '*';
+                return (String::from("*"), self.cmd_add_breakpoint(c, cmd, it));
             }
             "bl" => {
-                self.cmd_show_breakpoints();
-                return '*';
+                return (String::from("*"), self.cmd_show_breakpoints());
             }
             // help
             "d" => {
-                self.cmd_disassemble(c, it);
-                return '*';
+                return (String::from("*"), self.cmd_disassemble(c, it));
             }
             // edit memory
             "e" => {
-                self.cmd_edit_memory(c, it);
-                return '*';
+                return (String::from("*"), self.cmd_edit_memory(c, it));
             }
             // go
             "g" => {
                 self.going = true;
-                return 'p';
+                return (String::from("*"), true);
             }
             // help
             "h" => {
-                self.cmd_show_help();
-                return '*';
+                return (String::from("*"), self.cmd_show_help());
             }
             // load memory
             "l" => {
-                self.cmd_load_memory(c, it);
-                return '*';
+                return (String::from("*"), self.cmd_load_memory(c, it));
             }
             // quit
             "q" => {
                 debug_out_text(&"quit!");
-                return 'q';
+                return (String::from("q"), true);
             }
             // show registers
             "r" => {
                 debug_out_registers(c);
-                return '*';
+                return (String::from("*"), true);
             }
             // step
-            "p" => return 'p',
+            "p" => {
+                return (String::from("p"), true);
+            }
             // show/hide registers before showing the opcode
             "o" => {
                 self.show_registers_before_opcode = !self.show_registers_before_opcode;
@@ -536,32 +532,28 @@ impl Debugger {
                         "not "
                     }
                 ));
-                return '*';
+                return (String::from("*"), true);
             }
             // save memory
             "s" => {
-                self.cmd_dump_save_memory(c, cmd, it);
-                return '*';
+                return (String::from("*"), self.cmd_dump_save_memory(c, cmd, it));
             }
             // reset
             "t" => {
-                self.cmd_reset(c, it);
-                return '*';
+                return (String::from("*"), self.cmd_reset(c, it));
             }
             // edit registers
             "v" => {
-                self.cmd_edit_registers(c, it);
-                return '*';
+                return (String::from("*"), self.cmd_edit_registers(c, it));
             }
             // dump as hex
             "x" => {
-                self.cmd_dump_save_memory(c, cmd, it);
-                return '*';
+                return (String::from("*"), self.cmd_dump_save_memory(c, cmd, it));
             }
             // invalid
             _ => {
                 self.cmd_invalid();
-                return '*';
+                return (String::from("*"), false);
             }
         };
     }
