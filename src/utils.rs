@@ -58,6 +58,17 @@ pub(crate) fn debug_out_opcode<A: AddressingMode>(
     }
     Ok(())
 }
+
+/**
+ * returns 1 if string is prepended with $, 0 otherwise.
+ */
+pub(crate) fn is_dollar_hex(v: &str) -> usize {
+    if v.chars().next().unwrap_or_default() != '$' {
+        return 0;
+    }
+    return 1;
+}
+
 /**
  * display opcode string, currently implemented to stdout
  */

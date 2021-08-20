@@ -375,10 +375,12 @@ impl Cpu {
         }
         let mut empty_dbg = Debugger::new(false);
         let dbg = debugger.unwrap_or(&mut empty_dbg);
+        let mut cmd_res = true;
+        let mut cmd = String::from("");
 
         // loop
         'interpreter: loop {
-            if dbg.show_registers_before_opcode && !bp_rw_triggered {
+            if cmd_res && dbg.show_registers_before_opcode && !bp_rw_triggered && cmd.eq("p") {
                 // show registers
                 debug_out_registers(self);
             }
@@ -404,7 +406,14 @@ impl Cpu {
                 Ok(()) => (),
             };
 
-            let _ = match opcode_f(self, Some(dbg), 0, false, true, bp_rw_triggered) {
+            let _ = match opcode_f(
+                self,
+                Some(dbg),
+                0,
+                false,                                       // extra_cycle_on_page_crossing
+                true,                                        // decode only
+                bp_rw_triggered || !cmd_res || !cmd.eq("p"), // quiet
+            ) {
                 Err(e) => {
                     debug_out_text(&e);
                     break;
@@ -427,9 +436,8 @@ impl Cpu {
             }
 
             // handles debugger if any
-            let mut cmd = String::from("p");
-            let mut cmd_res = false;
             if self.debug {
+                cmd_res = false;
                 while !cmd_res {
                     match dbg.parse_cmd_stdin(self) {
                         Err(_) => {

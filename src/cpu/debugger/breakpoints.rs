@@ -181,11 +181,11 @@ impl Debugger {
         } else {
             // get address from iterator
             let addr_s = it.next().unwrap_or_default();
-            if addr_s.len() == 0 || addr_s.chars().next().unwrap_or_default() != '$' {
+            if addr_s.len() == 0 {
                 self.cmd_invalid();
                 return false;
             }
-            let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+            let _ = match u16::from_str_radix(&addr_s[is_dollar_hex(&addr_s)..], 16) {
                 Err(_) => {
                     // invalid command, address invalid
                     self.cmd_invalid();

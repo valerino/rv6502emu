@@ -55,18 +55,15 @@ impl Debugger {
             self.cmd_invalid();
             return false;
         }
+        let mut res = true;
+
         // save current pc
         let prev_pc = c.regs.pc;
         let addr: u16;
 
         // get the start address
         if addr_s.len() > 0 {
-            if addr_s.chars().next().unwrap_or_default() != '$' {
-                // invalid command, address invalid
-                self.cmd_invalid();
-                return false;
-            }
-            match u16::from_str_radix(&addr_s[1..], 16) {
+            match u16::from_str_radix(&addr_s[is_dollar_hex(&addr_s)..], 16) {
                 Err(_) => {
                     // invalid command, address invalid
                     self.cmd_invalid();
@@ -83,7 +80,7 @@ impl Debugger {
         c.regs.pc = addr;
         let mut instr_count: u16 = 0;
         debug_out_text(&format!(
-            "disassembling (at most) {} instructions at ${:04x}\n",
+            "disassembling {} instructions at ${:04x}\n",
             n, addr
         ));
         loop {
@@ -91,8 +88,9 @@ impl Debugger {
             let b: u8;
             match c.fetch() {
                 Err(e) => {
+                    res = false;
                     debug_out_text(&e);
-                    return false;
+                    break;
                 }
                 Ok(ok) => b = ok,
             }
@@ -108,6 +106,7 @@ impl Debugger {
             ) {
                 Err(e) => {
                     debug_out_text(&e);
+                    res = false;
                     break;
                 }
                 Ok(()) => (),
@@ -116,6 +115,7 @@ impl Debugger {
             match opcode_f(c, None, 0, false, true, false) {
                 Err(e) => {
                     debug_out_text(&e);
+                    res = false;
                     break;
                 }
                 Ok((a, _)) => instr_size = a,
@@ -131,6 +131,8 @@ impl Debugger {
             let (next_pc, o) = c.regs.pc.overflowing_add(instr_size as u16);
             if o {
                 // overlap
+                debug_out_text(&"ERROR, overlapping detected!");
+                res = false;
                 break;
             }
             c.regs.pc = next_pc;
@@ -138,7 +140,7 @@ impl Debugger {
 
         // restore pc in the end
         c.regs.pc = prev_pc;
-        return true;
+        return res;
     }
 
     /**
@@ -182,13 +184,7 @@ impl Debugger {
             return false;
         }
 
-        // get the start address
-        if addr_s.chars().next().unwrap_or_default() != '$' {
-            // invalid command, address invalid
-            self.cmd_invalid();
-            return false;
-        }
-        let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+        let _ = match u16::from_str_radix(&addr_s[is_dollar_hex(&addr_s)..], 16) {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
@@ -202,20 +198,25 @@ impl Debugger {
 
         // loop
         let mut prev_addr = addr;
-        loop {
+        let mut res: bool = true;
+        'assembler: loop {
             // read asm
             print!("?a> ${:04x}: ", addr);
             io::stdout().flush().unwrap();
             let mut full_string = String::new();
             let _ = match io::stdin().lock().read_line(&mut full_string) {
-                Err(_) => break,
+                Err(_) => {
+                    res = false;
+                    break 'assembler;
+                }
                 Ok(_) => (),
             };
             // split opcode and operand/s
             full_string = full_string.trim().to_ascii_lowercase();
             if full_string.len() == 0 {
                 // done
-                break;
+                res = false;
+                break 'assembler;
             }
             let (mut opcode, tmp) = full_string.split_once(' ').unwrap_or_default();
             opcode = &opcode.trim();
@@ -297,7 +298,7 @@ impl Debugger {
                 operand_s.truncate(operand_s.len() - 2);
             } else {
                 debug_out_text(&"invalid opcode!");
-                continue;
+                continue 'assembler;
             }
 
             // check access
@@ -310,7 +311,7 @@ impl Debugger {
             ) {
                 Err(e) => {
                     debug_out_text(&e);
-                    continue;
+                    continue 'assembler;
                 }
                 Ok(()) => (),
             };
@@ -320,7 +321,7 @@ impl Debugger {
             let _ = match self.find_instruction(&opcode, mode_id) {
                 None => {
                     debug_out_text(&"invalid opcode!");
-                    continue;
+                    continue 'assembler;
                 }
                 Some((_, idx)) => op_byte = idx,
             };
@@ -339,7 +340,8 @@ impl Debugger {
                         .write_byte(addr as usize, op_byte)
                         .is_err()
                     {
-                        break;
+                        res = false;
+                        break 'assembler;
                     }
                     addr = addr.wrapping_add(1 as u16);
                 }
@@ -350,7 +352,7 @@ impl Debugger {
                     let _ = match u16::from_str_radix(&operand_s[1..], 16) {
                         Err(_) => {
                             debug_out_text(&"invalid opcode!");
-                            continue;
+                            continue 'assembler;
                         }
                         Ok(a) => {
                             if c.bus
@@ -358,11 +360,13 @@ impl Debugger {
                                 .write_byte(addr as usize, op_byte)
                                 .is_err()
                             {
-                                break;
+                                res = false;
+                                break 'assembler;
                             }
                             addr = addr.wrapping_add(1);
                             if c.bus.get_memory().write_word_le(addr as usize, a).is_err() {
-                                break;
+                                res = false;
+                                break 'assembler;
                             }
                             addr = addr.wrapping_add(2 as u16);
                         }
@@ -378,7 +382,7 @@ impl Debugger {
                     let _ = match u8::from_str_radix(&operand_s[1..], 16) {
                         Err(_) => {
                             debug_out_text(&"invalid opcode!");
-                            continue;
+                            continue 'assembler;
                         }
                         Ok(a) => {
                             if c.bus
@@ -386,11 +390,13 @@ impl Debugger {
                                 .write_byte(addr as usize, op_byte)
                                 .is_err()
                             {
-                                break;
+                                res = false;
+                                break 'assembler;
                             }
                             addr = addr.wrapping_add(1);
                             if c.bus.get_memory().write_byte(addr as usize, a).is_err() {
-                                break;
+                                res = false;
+                                break 'assembler;
                             }
                             addr = addr.wrapping_add(1 as u16);
                         }
@@ -399,10 +405,15 @@ impl Debugger {
             };
             if addr < prev_addr {
                 // overlap detected
-                break;
+                debug_out_text(&"ERROR, overlapping detected!");
+                res = false;
+                break 'assembler;
             }
             prev_addr = addr;
         }
-        return true;
+        if res {
+            return true;
+        }
+        return false;
     }
 }

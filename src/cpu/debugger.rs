@@ -85,13 +85,8 @@ impl Debugger {
     fn cmd_reset(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         let s = it.next().unwrap_or_default();
         if s.len() > 0 {
-            if s.chars().next().unwrap_or_default() != '$' {
-                // invalid
-                self.cmd_invalid();
-                return false;
-            }
             // use provided address
-            let addr = u16::from_str_radix(&s[1..], 16).unwrap_or_default();
+            let addr = u16::from_str_radix(&s[is_dollar_hex(&s)..], 16).unwrap_or_default();
             debug_out_text(&format!("cpu reset, restarting at PC=${:04x}.", addr));
             let _ = match c.reset(Some(addr)) {
                 Err(e) => {
@@ -128,18 +123,10 @@ impl Debugger {
             return false;
         }
 
-        // all items must start with $
-        for item in col.iter() {
-            if item.chars().next().unwrap_or_default() != '$' {
-                // invalid item
-                self.cmd_invalid();
-                return false;
-            }
-        }
         // last item is the address
         let addr_s = col[l - 1];
         let mut addr: u16;
-        let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+        let _ = match u16::from_str_radix(&addr_s[is_dollar_hex(&addr_s)..], 16) {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
@@ -176,7 +163,7 @@ impl Debugger {
             }
 
             let b: u8;
-            let _ = match u8::from_str_radix(&item[1..], 16) {
+            let _ = match u8::from_str_radix(&item[is_dollar_hex(&item)..], 16) {
                 Err(_) => {
                     // invalid command, value invalid
                     self.cmd_invalid();
@@ -216,12 +203,7 @@ impl Debugger {
         let addr: usize;
 
         // get the start address
-        if addr_s.chars().next().unwrap_or_default() != '$' {
-            // invalid command, address invalid
-            self.cmd_invalid();
-            return false;
-        }
-        let _ = match usize::from_str_radix(&addr_s[1..], 16) {
+        let _ = match usize::from_str_radix(&addr_s[is_dollar_hex(&addr_s)..], 16) {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
@@ -291,6 +273,7 @@ impl Debugger {
                 .row_width(16)
                 .finish();
             debug_out_text(&dump);
+            debug_out_text(&"\n");
         }
         return true;
     }
@@ -303,13 +286,7 @@ impl Debugger {
         let addr_s = it.next().unwrap_or_default();
         let addr: u16;
 
-        // get the start address
-        if addr_s.chars().next().unwrap_or_default() != '$' {
-            // invalid command, address invalid
-            self.cmd_invalid();
-            return false;
-        }
-        let _ = match u16::from_str_radix(&addr_s[1..], 16) {
+        let _ = match u16::from_str_radix(&addr_s[is_dollar_hex(&addr_s)..], 16) {
             Err(_) => {
                 // invalid command, address invalid
                 self.cmd_invalid();
@@ -372,6 +349,8 @@ impl Debugger {
         println!("\tt [$address] .......................... reset (restart from given [$address], or defaults to reset vector).");
         println!("\tv <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).");
         println!("\tx <len> <$address> .................... hexdump <len> bytes at <$address>.");
+        println!("NOTE: all addresses/values must be hex where specified, the $ prefix is optional and just for clarity ($0400 = 400). 
+        This is valid everywhere but in the handwritten assembler inside the 'a' command.");
         return true;
     }
 
@@ -382,7 +361,7 @@ impl Debugger {
         // check input
         let reg = it.next().unwrap_or_default();
         let val = it.next().unwrap_or_default();
-        if reg.len() == 0 || val.len() == 0 || val.chars().next().unwrap_or_default() != '$' {
+        if reg.len() == 0 || val.len() == 0 {
             // invalid command, missing value
             self.cmd_invalid();
             return false;
@@ -390,7 +369,7 @@ impl Debugger {
 
         // match registers and assign value
         let r = reg.chars().next().unwrap_or_default();
-        let res_u16 = u16::from_str_radix(&val[1..], 16);
+        let res_u16 = u16::from_str_radix(&val[is_dollar_hex(&val)..], 16);
         match r {
             'a' | 'x' | 'y' | 's' | 'p' => match res_u16 {
                 Err(_) => {
