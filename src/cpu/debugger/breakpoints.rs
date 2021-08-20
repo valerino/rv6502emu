@@ -302,7 +302,7 @@ impl Debugger {
      */
     pub(super) fn cmd_clear_breakpoints(&mut self) -> bool {
         // ask first
-        debug_out_text(&"clear breakpoints list ? (y/n)");
+        debug_out_text(&"delete all breakpoints ? (y/n)");
         io::stdout().flush().unwrap();
         let mut full_string = String::new();
         let _ = match io::stdin().lock().read_line(&mut full_string) {
@@ -311,7 +311,7 @@ impl Debugger {
         };
         if full_string.trim().eq_ignore_ascii_case("y") {
             self.breakpoints.clear();
-            debug_out_text(&"breakpoints list cleared.");
+            debug_out_text(&"breakpoints cleared.");
             return true;
         }
         return false;

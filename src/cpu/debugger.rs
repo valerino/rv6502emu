@@ -54,6 +54,9 @@ pub struct Debugger {
 
     /// set by the debugger with the 'g' (continue until break/trap) command.
     pub(crate) going: bool,
+
+    /// to display registers before the opcode.
+    pub(crate) show_registers_before_opcode: bool,
 }
 
 impl Debugger {
@@ -65,6 +68,7 @@ impl Debugger {
             breakpoints: Vec::new(),
             enabled: enabled,
             going: false,
+            show_registers_before_opcode: false,
         }
     }
 
@@ -357,12 +361,11 @@ impl Debugger {
     );
         println!("\th ..................................... this help.");
         println!("\tl <$address> <path> ................... load <path> at <$address>.",);
-        println!("\tmi .................................... show memory size.",);
         println!("\tq ..................................... exit emulator.");
         println!("\tr ..................................... show registers.");
         println!("\tp ..................................... step next instruction.");
         println!(
-            "\to ......................................step next instruction and show registers."
+            "\to ..................................... enable/disabling show registers before the opcode, default is off."
         );
         println!("\ts <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.",
         );
@@ -510,15 +513,6 @@ impl Debugger {
                 self.cmd_load_memory(c, it);
                 return '*';
             }
-            // show memory size
-            "mi" => {
-                let mem_size = c.bus.get_memory().get_size();
-                debug_out_text(&format!(
-                    "memory size: {} (${:04x}) bytes.",
-                    mem_size, mem_size,
-                ));
-                return '*';
-            }
             // quit
             "q" => {
                 debug_out_text(&"quit!");
@@ -531,8 +525,19 @@ impl Debugger {
             }
             // step
             "p" => return 'p',
-            // step + show registers
-            "o" => return 'o',
+            // show/hide registers before showing the opcode
+            "o" => {
+                self.show_registers_before_opcode = !self.show_registers_before_opcode;
+                debug_out_text(&format!(
+                    "{}showing registers before the opcode.",
+                    if self.show_registers_before_opcode {
+                        ""
+                    } else {
+                        "not "
+                    }
+                ));
+                return '*';
+            }
             // save memory
             "s" => {
                 self.cmd_dump_save_memory(c, cmd, it);

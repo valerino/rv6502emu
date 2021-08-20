@@ -74,11 +74,10 @@ debugger supported commands:
         g ..................................... continue execution until breakpoint or trap.
         h ..................................... this help.
         l <$address> <path> ................... load <path> at <$address>.
-        mi .................................... show memory size.
         q ..................................... exit emulator.
         r ..................................... show registers.
         p ..................................... step next instruction.
-        o ......................................step next instruction and show registers.
+        o ..................................... enable/disabling show registers before the opcode, default is off.
         s <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.
         t [$address] .......................... reset (restart from given [$address], or defaults to reset vector).
         v <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).

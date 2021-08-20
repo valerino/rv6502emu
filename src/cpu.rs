@@ -378,49 +378,66 @@ impl Cpu {
 
         // loop
         'interpreter: loop {
+            if dbg.show_registers_before_opcode {
+                // show registers
+                debug_out_registers(self);
+            }
+
             // fetch an instruction
             let b = self.fetch()?;
+
+            // decode (first check boundaries)
+            let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing, mrk) =
+                opcodes::OPCODE_MATRIX[b as usize];
+
+            match cpu_error::check_opcode_boundaries(
+                self.bus.get_memory().get_size(),
+                self.regs.pc as usize,
+                mrk.id,
+                CpuErrorType::MemoryRead,
+                None,
+            ) {
+                Err(e) => {
+                    debug_out_text(&e);
+                    break;
+                }
+                Ok(()) => (),
+            };
+
+            let _ = match opcode_f(self, Some(dbg), 0, false, true, false, false) {
+                Err(e) => {
+                    debug_out_text(&e);
+                    break;
+                }
+                Ok((_, _)) => (),
+            };
+
+            // check if we have a breakpoint at pc
+            let mut bp_idx = 0;
+            if bp_triggered == 0 && self.debug {
+                match dbg.has_enabled_breakpoint(
+                    self.regs.pc,
+                    BreakpointType::EXEC | BreakpointType::NMI | BreakpointType::IRQ,
+                ) {
+                    None => (),
+                    Some(idx) => {
+                        bp_triggered = 1;
+                        bp_idx = idx;
+                        dbg.going = false;
+                        debug_out_text(&format!("breakpoint {} triggered!", bp_idx));
+                    }
+                };
+            }
 
             // handles debugger if any
             let mut stdin_res = 'p';
             if self.debug {
                 stdin_res = dbg.parse_cmd_stdin(self)?;
             }
-            match stdin_res {
-                'p' | 'o' => {
-                    // decode
-                    let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing, mrk) =
-                        opcodes::OPCODE_MATRIX[b as usize];
-                    match cpu_error::check_opcode_boundaries(
-                        self.bus.get_memory().get_size(),
-                        self.regs.pc as usize,
-                        mrk.id,
-                        CpuErrorType::MemoryRead,
-                        None,
-                    ) {
-                        Err(e) => {
-                            debug_out_text(&e);
-                            break;
-                        }
-                        Ok(()) => (),
-                    };
 
-                    // check if we have a breakpoint at pc, irq, nmi
-                    let mut bp_idx = 0;
-                    if bp_triggered == 0 && self.debug {
-                        match dbg.has_enabled_breakpoint(
-                            self.regs.pc,
-                            BreakpointType::EXEC | BreakpointType::NMI | BreakpointType::IRQ,
-                        ) {
-                            None => (),
-                            Some(idx) => {
-                                bp_triggered = 1;
-                                bp_idx = idx;
-                                dbg.going = false;
-                            }
-                        };
-                    }
-                    // execute (or just decode, if breakpoint is set)
+            match stdin_res {
+                'p' => {
+                    // execute
                     let mut instr_size: i8 = 0;
                     let mut elapsed: usize = 0;
                     let _ = match opcode_f(
@@ -428,25 +445,22 @@ impl Cpu {
                         Some(dbg),
                         opcode_cycles,
                         add_extra_cycle_on_page_crossing,
-                        bp_triggered == 1, // when bp_triggered = 1, only decoding is done (no exec)
-                        rw_bp_triggered,
-                        false,
+                        false, // decode only
+                        false, //rw_bp_triggered,
+                        true,  // quiet, do not print instruction again
                     ) {
                         Ok((a, b)) => {
                             instr_size = a;
                             elapsed = b;
-                            if bp_triggered == 1 {
-                                debug_out_text(&format!("breakpoint {} triggered!", bp_idx));
-                            }
-                            if rw_bp_triggered {
+                            /*if rw_bp_triggered {
                                 rw_bp_triggered = false;
-                            }
+                            }*/
                         }
                         Err(e) => {
                             if bp_triggered == 0 && e.t == CpuErrorType::RwBreakpoint {
                                 // an r/w breakpoint has triggered, opcode has not executed.
                                 debug_out_text(&format!("R/W breakpoint {} triggered!", e.bp_idx));
-                                rw_bp_triggered = true;
+                                //rw_bp_triggered = true;
                                 bp_triggered = 1;
                                 dbg.going = false;
                             } else {
@@ -459,20 +473,19 @@ impl Cpu {
                         }
                     };
 
+                    /*
                     if bp_triggered == 0 || bp_triggered == 2 {
                         // step, advance pc and increment the elapsed cycles (only if a breakpoint has not triggered!)
                         self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
                         self.cycles = self.cycles.wrapping_add(elapsed);
-                        if stdin_res == 'o' {
-                            // show registers too
-                            debug_out_registers(self);
-                        }
                         bp_triggered = 0;
                     } else {
                         // bp_triggered was 1 (a breakpoint has just hit)
                         bp_triggered = 2;
-                    }
-
+                    }*/
+                    // step, advance pc and increment the elapsed cycles (only if a breakpoint has not triggered!)
+                    self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
+                    self.cycles = self.cycles.wrapping_add(elapsed);
                     if cycles != 0 && elapsed >= cycles {
                         break 'interpreter;
                     }
