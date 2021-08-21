@@ -312,7 +312,10 @@ impl Debugger {
                 debug_out_text(&e);
                 return false;
             }
-            Ok(()) => debug_out_text(&"file loaded!"),
+            Ok(()) => debug_out_text(&format!(
+                "{} correctly loaded at ${:04x} !",
+                file_path, addr
+            )),
         };
         return true;
     }
@@ -476,7 +479,7 @@ impl Debugger {
             // go
             "g" => {
                 self.going = true;
-                return (String::from("*"), true);
+                return (String::from("p"), true);
             }
             // help
             "h" => {

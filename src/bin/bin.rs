@@ -24,7 +24,7 @@ pub fn main() {
     // resets the cpu (use 0x400 as custom address for the Klaus test) and start execution
     c.reset(Some(0x400)).unwrap();
 
-    // run with a debugger attached, setting an r/w breakpoint before starting
+    // run with a debugger attached, setting a breakpoint before starting
     let mut dbg = Debugger::new(true);
     //dbg.parse_cmd(&mut c, "bx $982");
     dbg.parse_cmd(&mut c, "bx $375d");

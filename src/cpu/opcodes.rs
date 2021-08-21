@@ -265,43 +265,40 @@ fn adc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((0, 0));
-    }
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
 
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    // perform the addition (regs.a+b+C)
-    let mut sum: u16;
-    if c.is_cpu_flag_set(CpuFlags::D) {
-        // bcd
-        sum = ((c.regs.a as u16) & 0x0f)
-            .wrapping_add((b as u16) & 0x0f)
-            .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
-        if sum >= 10 {
-            sum = (sum.wrapping_sub(10)) | 10;
-            sum = sum
-                .wrapping_add((c.regs.a as u16) & 0xf0)
-                .wrapping_add((b as u16) & 0xf0);
-            if sum > 0x9f {
-                sum = sum.wrapping_add(0x60);
+        // perform the addition (regs.a+b+C)
+        let mut sum: u16;
+        if c.is_cpu_flag_set(CpuFlags::D) {
+            // bcd
+            sum = ((c.regs.a as u16) & 0x0f)
+                .wrapping_add((b as u16) & 0x0f)
+                .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
+            if sum >= 10 {
+                sum = (sum.wrapping_sub(10)) | 10;
+                sum = sum
+                    .wrapping_add((c.regs.a as u16) & 0xf0)
+                    .wrapping_add((b as u16) & 0xf0);
+                if sum > 0x9f {
+                    sum = sum.wrapping_add(0x60);
+                }
             }
+        } else {
+            // normal
+            sum = (c.regs.a as u16)
+                .wrapping_add(b as u16)
+                .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
         }
-    } else {
-        // normal
-        sum = (c.regs.a as u16)
-            .wrapping_add(b as u16)
-            .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
-    }
 
-    // set flags
-    c.set_cpu_flags(CpuFlags::C, sum > 0xff);
-    let o = ((c.regs.a as u16) ^ sum) & ((b as u16) ^ sum) & 0x80;
-    c.set_cpu_flags(CpuFlags::V, o != 0);
-    c.regs.a = (sum & 0xff) as u8;
-    set_zn_flags(c, c.regs.a);
+        // set flags
+        c.set_cpu_flags(CpuFlags::C, sum > 0xff);
+        let o = ((c.regs.a as u16) ^ sum) & ((b as u16) ^ sum) & 0x80;
+        c.set_cpu_flags(CpuFlags::V, o != 0);
+        c.regs.a = (sum & 0xff) as u8;
+        set_zn_flags(c, c.regs.a);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -336,25 +333,23 @@ fn ahx<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+
+    if !decode_only {
+        // get msb from target address
+        let mut h = (tgt >> 8) as u8;
+
+        // add 1 on msb when page crossing
+        // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+        if extra_cycle_on_page_crossing {
+            h = h.wrapping_add(1);
+        }
+
+        // A & X & (H + 1)
+        let res = c.regs.a & c.regs.x & h.wrapping_add(1);
+
+        // store
+        A::store(c, d, tgt, res)?;
     }
-
-    // get msb from target address
-    let mut h = (tgt >> 8) as u8;
-
-    // add 1 on msb when page crossing
-    // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
-    if extra_cycle_on_page_crossing {
-        h = h.wrapping_add(1);
-    }
-
-    // A & X & (H + 1)
-    let res = c.regs.a & c.regs.x & h.wrapping_add(1);
-
-    // store
-    A::store(c, d, tgt, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -384,18 +379,16 @@ fn alr<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+
+    if !decode_only {
+        // and (preserve flags, n and z are set in lfr)
+        let prev_p = c.regs.p;
+        and::<A>(c, d, 0, false, decode_only, true)?;
+        c.regs.p = prev_p;
+
+        // lsr A
+        lsr::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
     }
-
-    // and (preserve flags, n and z are set in lfr)
-    let prev_p = c.regs.p;
-    and::<A>(c, d, 0, false, decode_only, true)?;
-    c.regs.p = prev_p;
-
-    // lsr A
-    lsr::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -426,15 +419,12 @@ fn anc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+
+    if !decode_only {
+        // and
+        and::<A>(c, d, in_cycles, extra_cycle, decode_only, true)?;
+        c.set_cpu_flags(CpuFlags::C, utils::is_signed(c.regs.a));
     }
-
-    // and
-    and::<A>(c, d, in_cycles, extra_cycle, decode_only, true)?;
-    c.set_cpu_flags(CpuFlags::C, utils::is_signed(c.regs.a));
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -479,18 +469,16 @@ fn and<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        // A AND M -> A
+        c.regs.a = c.regs.a & b;
+
+        set_zn_flags(c, c.regs.a);
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    // A AND M -> A
-    c.regs.a = c.regs.a & b;
-
-    set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -527,59 +515,56 @@ fn arr<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    if !c.is_cpu_flag_set(CpuFlags::D) {
-        // and
-        and::<A>(c, d, 0, false, decode_only, true)?;
+    if !decode_only {
+        if !c.is_cpu_flag_set(CpuFlags::D) {
+            // and
+            and::<A>(c, d, 0, false, decode_only, true)?;
 
-        // ror A
-        let prev_a = c.regs.a;
-        ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
+            // ror A
+            let prev_a = c.regs.a;
+            ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
 
-        // set carry and overflow
-        c.set_cpu_flags(CpuFlags::C, utils::is_signed(prev_a));
-        let is_bit_6_set = prev_a & 0b01000000;
-        c.set_cpu_flags(
-            CpuFlags::V,
-            (is_bit_6_set as i8 ^ utils::is_signed(prev_a) as i8) != 0,
-        );
-        set_zn_flags(c, c.regs.a);
-    } else {
-        // decimal
-        // and
-        and::<A>(c, d, 0, false, decode_only, true)?;
-        let and_res = c.regs.a;
-        ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
-
-        // fix for decimal
-
-        // original C is preserved in N
-        c.set_cpu_flags(CpuFlags::N, c.is_cpu_flag_set(CpuFlags::C));
-
-        // Z is set when the ROR produced a zero result
-        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-
-        // V is set when bit 6 of the result was changed by the ROR
-        let v = ((c.regs.a ^ and_res) & 0x40) >> 6;
-        c.set_cpu_flags(CpuFlags::V, v != 0);
-
-        // fixup for low nibble
-        if (and_res & 0xf) + (and_res & 0x1) > 0x5 {
-            c.regs.a = (c.regs.a & 0xf0) | ((c.regs.a + 0x6) & 0xf);
-        }
-        // fixup for high nibble, set carry
-        if (and_res & 0xf0) + (and_res & 0x10) > 0x50 {
-            c.regs.a = (c.regs.a & 0x0f) | ((c.regs.a + 0x60) & 0xf0);
-            c.set_cpu_flags(CpuFlags::C, true);
+            // set carry and overflow
+            c.set_cpu_flags(CpuFlags::C, utils::is_signed(prev_a));
+            let is_bit_6_set = prev_a & 0b01000000;
+            c.set_cpu_flags(
+                CpuFlags::V,
+                (is_bit_6_set as i8 ^ utils::is_signed(prev_a) as i8) != 0,
+            );
+            set_zn_flags(c, c.regs.a);
         } else {
-            c.set_cpu_flags(CpuFlags::C, false);
+            // decimal
+            // and
+            and::<A>(c, d, 0, false, decode_only, true)?;
+            let and_res = c.regs.a;
+            ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
+
+            // fix for decimal
+
+            // original C is preserved in N
+            c.set_cpu_flags(CpuFlags::N, c.is_cpu_flag_set(CpuFlags::C));
+
+            // Z is set when the ROR produced a zero result
+            c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+
+            // V is set when bit 6 of the result was changed by the ROR
+            let v = ((c.regs.a ^ and_res) & 0x40) >> 6;
+            c.set_cpu_flags(CpuFlags::V, v != 0);
+
+            // fixup for low nibble
+            if (and_res & 0xf) + (and_res & 0x1) > 0x5 {
+                c.regs.a = (c.regs.a & 0xf0) | ((c.regs.a + 0x6) & 0xf);
+            }
+            // fixup for high nibble, set carry
+            if (and_res & 0xf0) + (and_res & 0x10) > 0x50 {
+                c.regs.a = (c.regs.a & 0x0f) | ((c.regs.a + 0x60) & 0xf0);
+                c.set_cpu_flags(CpuFlags::C, true);
+            } else {
+                c.set_cpu_flags(CpuFlags::C, false);
+            }
         }
     }
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -621,22 +606,20 @@ fn asl<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+
+    if !decode_only {
+        // read operand
+        let mut b = A::load(c, d, tgt)?;
+        c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
+
+        // shl
+        b <<= 1;
+        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+        c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
+
+        // store back
+        A::store(c, d, tgt, b)?;
     }
-
-    // read operand
-    let mut b = A::load(c, d, tgt)?;
-    c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
-
-    // shl
-    b <<= 1;
-    c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-    c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
-
-    // store back
-    A::store(c, d, tgt, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -671,10 +654,6 @@ fn bcc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
     // read operand
     let b = A::load(c, d, tgt)?;
@@ -682,14 +661,15 @@ fn bcc<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if !c.is_cpu_flag_set(CpuFlags::C) {
-        // branch is taken, add another cycle
-        cycles += 1;
-        taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
-        c.regs.pc = new_pc;
+    if !decode_only {
+        if !c.is_cpu_flag_set(CpuFlags::C) {
+            // branch is taken, add another cycle
+            cycles += 1;
+            taken = true;
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            c.regs.pc = new_pc;
+        }
     }
-
     Ok((
         if taken { 0 } else { A::len() },
         cycles + if extra_cycle { 1 } else { 0 },
@@ -728,10 +708,6 @@ fn bcs<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
     // read operand
     let b = A::load(c, d, tgt)?;
@@ -739,14 +715,15 @@ fn bcs<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if c.is_cpu_flag_set(CpuFlags::C) {
-        // branch is taken, add another cycle
-        cycles += 1;
-        taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
-        c.regs.pc = new_pc;
+    if !decode_only {
+        if c.is_cpu_flag_set(CpuFlags::C) {
+            // branch is taken, add another cycle
+            cycles += 1;
+            taken = true;
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            c.regs.pc = new_pc;
+        }
     }
-
     Ok((
         if taken { 0 } else { A::len() },
         cycles + if extra_cycle { 1 } else { 0 },
@@ -784,10 +761,6 @@ fn beq<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
     // read operand
     let b = A::load(c, d, tgt)?;
@@ -795,14 +768,16 @@ fn beq<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if c.is_cpu_flag_set(CpuFlags::Z) {
-        // branch is taken, add another cycle
-        cycles += 1;
-        taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
-        c.regs.pc = new_pc;
-    }
 
+    if !decode_only {
+        if c.is_cpu_flag_set(CpuFlags::Z) {
+            // branch is taken, add another cycle
+            cycles += 1;
+            taken = true;
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            c.regs.pc = new_pc;
+        }
+    }
     Ok((
         if taken { 0 } else { A::len() },
         cycles + if extra_cycle { 1 } else { 0 },
@@ -847,19 +822,16 @@ fn bit<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        let and_res = c.regs.a & b;
+
+        c.set_cpu_flags(CpuFlags::Z, and_res == 0);
+        c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
+        c.set_cpu_flags(CpuFlags::V, b & 0b01000000 != 0);
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    let and_res = c.regs.a & b;
-
-    c.set_cpu_flags(CpuFlags::Z, and_res == 0);
-    c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
-    c.set_cpu_flags(CpuFlags::V, b & 0b01000000 != 0);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -894,23 +866,21 @@ fn bmi<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if c.is_cpu_flag_set(CpuFlags::N) {
-        // branch is taken, add another cycle
-        cycles += 1;
-        taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
-        c.regs.pc = new_pc;
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        // branch
+        if c.is_cpu_flag_set(CpuFlags::N) {
+            // branch is taken, add another cycle
+            cycles += 1;
+            taken = true;
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            c.regs.pc = new_pc;
+        }
     }
     Ok((
         if taken { 0 } else { A::len() },
@@ -949,25 +919,22 @@ fn bne<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if !c.is_cpu_flag_set(CpuFlags::Z) {
-        // branch is taken, add another cycle
-        cycles += 1;
-        taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
-        c.regs.pc = new_pc;
-    }
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
 
+        // branch
+        if !c.is_cpu_flag_set(CpuFlags::Z) {
+            // branch is taken, add another cycle
+            cycles += 1;
+            taken = true;
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            c.regs.pc = new_pc;
+        }
+    }
     Ok((
         if taken { 0 } else { A::len() },
         cycles + if extra_cycle { 1 } else { 0 },
@@ -1005,25 +972,21 @@ fn bpl<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
-
     // read operand
     let b = A::load(c, d, tgt)?;
 
-    // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if !c.is_cpu_flag_set(CpuFlags::N) {
-        // branch is taken, add another cycle
-        cycles += 1;
-        taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
-        c.regs.pc = new_pc;
+    if !decode_only {
+        // branch
+        if !c.is_cpu_flag_set(CpuFlags::N) {
+            // branch is taken, add another cycle
+            cycles += 1;
+            taken = true;
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            c.regs.pc = new_pc;
+        }
     }
-
     Ok((
         if taken { 0 } else { A::len() },
         cycles + if extra_cycle { 1 } else { 0 },
@@ -1060,22 +1023,22 @@ fn brk<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // push pc and p on stack
+        push_word_le(c, c.regs.pc)?;
+        push_byte(c, c.regs.p)?;
+
+        // set break flag
+        c.set_cpu_flags(CpuFlags::B, true);
+
+        // set pc to address contained at irq vector
+        let addr = c.bus.get_memory().read_word_le(Vectors::IRQ as usize)?;
+        c.regs.pc = addr;
     }
-
-    // push pc and p on stack
-    push_word_le(c, c.regs.pc)?;
-    push_byte(c, c.regs.p)?;
-
-    // set break flag
-    c.set_cpu_flags(CpuFlags::B, true);
-
-    // set pc to address contained at irq vector
-    let addr = c.bus.get_memory().read_word_le(Vectors::IRQ as usize)?;
-    c.regs.pc = addr;
-    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((
+        if decode_only { A::len() } else { 0 },
+        in_cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
 /**
@@ -1109,10 +1072,6 @@ fn bvc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
     // read operand
     let b = A::load(c, d, tgt)?;
@@ -1120,14 +1079,16 @@ fn bvc<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if !c.is_cpu_flag_set(CpuFlags::V) {
-        // branch is taken, add another cycle
-        cycles += 1;
-        taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
-        c.regs.pc = new_pc;
-    }
 
+    if !decode_only {
+        if !c.is_cpu_flag_set(CpuFlags::V) {
+            // branch is taken, add another cycle
+            cycles += 1;
+            taken = true;
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            c.regs.pc = new_pc;
+        }
+    }
     Ok((
         if taken { 0 } else { A::len() },
         cycles + if extra_cycle { 1 } else { 0 },
@@ -1165,10 +1126,6 @@ fn bvs<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
     // read operand
     let b = A::load(c, d, tgt)?;
@@ -1176,14 +1133,16 @@ fn bvs<A: AddressingMode>(
     // branch
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    if c.is_cpu_flag_set(CpuFlags::V) {
-        // branch is taken, add another cycle
-        cycles += 1;
-        taken = true;
-        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
-        c.regs.pc = new_pc;
-    }
 
+    if !decode_only {
+        if c.is_cpu_flag_set(CpuFlags::V) {
+            // branch is taken, add another cycle
+            cycles += 1;
+            taken = true;
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            c.regs.pc = new_pc;
+        }
+    }
     Ok((
         if taken { 0 } else { A::len() },
         cycles + if extra_cycle { 1 } else { 0 },
@@ -1221,13 +1180,10 @@ fn clc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // clear carry
+        c.set_cpu_flags(CpuFlags::C, false);
     }
-
-    // clear carry
-    c.set_cpu_flags(CpuFlags::C, false);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1262,13 +1218,11 @@ fn cld<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // clear decimal flag
-    c.set_cpu_flags(CpuFlags::D, false);
+    if !decode_only {
+        // clear decimal flag
+        c.set_cpu_flags(CpuFlags::D, false);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1303,13 +1257,10 @@ fn cli<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // enable interrupts, clear the flag
+        c.set_cpu_flags(CpuFlags::I, false);
     }
-
-    // enable interrupts, clear the flag
-    c.set_cpu_flags(CpuFlags::I, false);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1344,13 +1295,10 @@ fn clv<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // clear the overflow flag
+        c.set_cpu_flags(CpuFlags::V, false);
     }
-
-    // clear the overflow flag
-    c.set_cpu_flags(CpuFlags::V, false);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1394,19 +1342,15 @@ fn cmp<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        let res = c.regs.a.wrapping_sub(b);
+        c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
+        c.set_cpu_flags(CpuFlags::Z, c.regs.a == b);
+        c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    let res = c.regs.a.wrapping_sub(b);
-    c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
-    c.set_cpu_flags(CpuFlags::Z, c.regs.a == b);
-    c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1445,19 +1389,15 @@ fn cpx<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        let res = c.regs.x.wrapping_sub(b);
+        c.set_cpu_flags(CpuFlags::C, c.regs.x >= b);
+        c.set_cpu_flags(CpuFlags::Z, c.regs.x == b);
+        c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    let res = c.regs.x.wrapping_sub(b);
-    c.set_cpu_flags(CpuFlags::C, c.regs.x >= b);
-    c.set_cpu_flags(CpuFlags::Z, c.regs.x == b);
-    c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1496,19 +1436,15 @@ fn cpy<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        let res = c.regs.y.wrapping_sub(b);
+        c.set_cpu_flags(CpuFlags::C, c.regs.y >= b);
+        c.set_cpu_flags(CpuFlags::Z, c.regs.y == b);
+        c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    let res = c.regs.y.wrapping_sub(b);
-    c.set_cpu_flags(CpuFlags::C, c.regs.y >= b);
-    c.set_cpu_flags(CpuFlags::Z, c.regs.y == b);
-    c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1544,16 +1480,13 @@ fn dcp<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // perform dec + cmp internally (flags are set according to cmp, so save before)
+        let prev_p = c.regs.p;
+        dec::<A>(c, d, 0, false, decode_only, true)?;
+        c.regs.p = prev_p;
+        cmp::<A>(c, d, 0, false, decode_only, true)?;
     }
-
-    // perform dec + cmp internally (flags are set according to cmp, so save before)
-    let prev_p = c.regs.p;
-    dec::<A>(c, d, 0, false, decode_only, true)?;
-    c.regs.p = prev_p;
-    cmp::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1593,18 +1526,15 @@ fn dec<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let mut b = A::load(c, d, tgt)?;
+        b = b.wrapping_sub(1);
+        set_zn_flags(c, b);
+
+        // store back
+        A::store(c, d, tgt, b)?;
     }
-
-    // read operand
-    let mut b = A::load(c, d, tgt)?;
-    b = b.wrapping_sub(1);
-    set_zn_flags(c, b);
-
-    // store back
-    A::store(c, d, tgt, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1641,14 +1571,10 @@ fn dex<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        c.regs.x = c.regs.x.wrapping_sub(1);
+        set_zn_flags(c, c.regs.x);
     }
-
-    c.regs.x = c.regs.x.wrapping_sub(1);
-    set_zn_flags(c, c.regs.x);
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1685,14 +1611,11 @@ fn dey<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+
+    if !decode_only {
+        c.regs.y = c.regs.y.wrapping_sub(1);
+        set_zn_flags(c, c.regs.y);
     }
-
-    c.regs.y = c.regs.y.wrapping_sub(1);
-    set_zn_flags(c, c.regs.y);
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1737,16 +1660,13 @@ fn eor<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        c.regs.a = c.regs.a ^ b;
+        set_zn_flags(c, c.regs.a);
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    c.regs.a = c.regs.a ^ b;
-    set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1786,20 +1706,16 @@ fn inc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let mut b = A::load(c, d, tgt)?;
+
+        b = b.wrapping_add(1);
+        set_zn_flags(c, b);
+
+        // store back
+        A::store(c, d, tgt, b)?;
     }
-
-    // read operand
-    let mut b = A::load(c, d, tgt)?;
-
-    b = b.wrapping_add(1);
-    set_zn_flags(c, b);
-
-    // store back
-    A::store(c, d, tgt, b)?;
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1836,14 +1752,10 @@ fn inx<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        c.regs.x = c.regs.x.wrapping_add(1);
+        set_zn_flags(c, c.regs.x);
     }
-
-    c.regs.x = c.regs.x.wrapping_add(1);
-    set_zn_flags(c, c.regs.x);
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1880,14 +1792,10 @@ fn iny<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        c.regs.y = c.regs.y.wrapping_add(1);
+        set_zn_flags(c, c.regs.y);
     }
-
-    c.regs.y = c.regs.y.wrapping_add(1);
-    set_zn_flags(c, c.regs.y);
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1924,22 +1832,18 @@ fn isc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // perform inc + sbc internally (sbc sets p, preserve carry flag after inc)
+        let prev_p = c.regs.p;
+        inc::<A>(c, d, 0, false, decode_only, true)?;
+
+        // preserve carry
+        let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+        c.regs.p = prev_p;
+        c.set_cpu_flags(CpuFlags::C, is_c_set);
+
+        sbc::<A>(c, d, 0, false, decode_only, true)?;
     }
-
-    // perform inc + sbc internally (sbc sets p, preserve carry flag after inc)
-    let prev_p = c.regs.p;
-    inc::<A>(c, d, 0, false, decode_only, true)?;
-
-    // preserve carry
-    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
-    c.regs.p = prev_p;
-    c.set_cpu_flags(CpuFlags::C, is_c_set);
-
-    sbc::<A>(c, d, 0, false, decode_only, true)?;
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -1975,15 +1879,15 @@ fn jmp<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // set pc
+        c.regs.pc = tgt;
     }
 
-    // set pc
-    c.regs.pc = tgt;
-
-    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((
+        if decode_only { A::len() } else { 0 },
+        in_cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
 /**
@@ -2017,18 +1921,17 @@ fn jsr<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // push return address
+        push_word_le(c, c.regs.pc.wrapping_add(A::len() as u16).wrapping_sub(1))?;
+
+        // set pc
+        c.regs.pc = tgt;
     }
-
-    // push return address
-    push_word_le(c, c.regs.pc.wrapping_add(A::len() as u16).wrapping_sub(1))?;
-
-    // set pc
-    c.regs.pc = tgt;
-
-    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((
+        if decode_only { A::len() } else { 0 },
+        in_cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
 /**
@@ -2085,19 +1988,16 @@ fn las<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // get operand
+        let b = A::load(c, d, tgt)?;
+        let res = b & c.regs.s;
+
+        c.regs.a = res;
+        c.regs.x = res;
+        c.regs.s = res;
+        set_zn_flags(c, res);
     }
-
-    // get operand
-    let b = A::load(c, d, tgt)?;
-    let res = b & c.regs.s;
-
-    c.regs.a = res;
-    c.regs.x = res;
-    c.regs.s = res;
-    set_zn_flags(c, res);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2132,17 +2032,14 @@ fn lax<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        c.regs.a = b;
+        c.regs.x = b;
+        set_zn_flags(c, b);
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    c.regs.a = b;
-    c.regs.x = b;
-    set_zn_flags(c, b);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2184,17 +2081,13 @@ fn lda<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+        c.regs.a = b;
+
+        set_zn_flags(c, c.regs.a);
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-    c.regs.a = b;
-
-    set_zn_flags(c, c.regs.a);
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2233,16 +2126,13 @@ fn ldx<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+        c.regs.x = b;
+
+        set_zn_flags(c, c.regs.x);
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-    c.regs.x = b;
-
-    set_zn_flags(c, c.regs.x);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2281,16 +2171,13 @@ fn ldy<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+        c.regs.y = b;
+
+        set_zn_flags(c, c.regs.y);
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-    c.regs.y = b;
-
-    set_zn_flags(c, c.regs.y);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2331,24 +2218,21 @@ fn lsr<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let mut b = A::load(c, d, tgt)?;
+
+        // save bit 0 in the carry
+        c.set_cpu_flags(CpuFlags::C, b & 1 != 0);
+
+        // lsr
+        b >>= 1;
+
+        set_zn_flags(c, b);
+
+        // store back
+        A::store(c, d, tgt, b)?;
     }
-
-    // read operand
-    let mut b = A::load(c, d, tgt)?;
-
-    // save bit 0 in the carry
-    c.set_cpu_flags(CpuFlags::C, b & 1 != 0);
-
-    // lsr
-    b >>= 1;
-
-    set_zn_flags(c, b);
-
-    // store back
-    A::store(c, d, tgt, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2380,23 +2264,19 @@ fn lxa<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        // N and Z are set according to the value of the accumulator before the instruction executed
+        set_zn_flags(c, c.regs.a);
+
+        // we choose $ee as constant as specified in [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+        let k = 0xee;
+        let res: u8 = (c.regs.a | k) & b;
+        c.regs.x = res;
+        c.regs.a = res;
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    // N and Z are set according to the value of the accumulator before the instruction executed
-    set_zn_flags(c, c.regs.a);
-
-    // we choose $ee as constant as specified in [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
-    let k = 0xee;
-    let res: u8 = (c.regs.a | k) & b;
-    c.regs.x = res;
-    c.regs.a = res;
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2432,11 +2312,6 @@ fn nop<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
-
     // noop, do nothing ...
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2480,15 +2355,13 @@ fn ora<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // read operand
-    let b = A::load(c, d, tgt)?;
-    c.regs.a |= b;
-    set_zn_flags(c, c.regs.a);
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+        c.regs.a |= b;
+        set_zn_flags(c, c.regs.a);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2523,12 +2396,10 @@ fn pha<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    push_byte(c, c.regs.a)?;
+    if !decode_only {
+        push_byte(c, c.regs.a)?;
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2565,16 +2436,13 @@ fn php<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // ensure B and U(ndefined) are set to 1
+        let mut flags = CpuFlags::from_bits(c.regs.p).unwrap();
+        flags.set(CpuFlags::U, true);
+        flags.set(CpuFlags::B, true);
+        push_byte(c, flags.bits())?;
     }
-
-    // ensure B and U(ndefined) are set to 1
-    let mut flags = CpuFlags::from_bits(c.regs.p).unwrap();
-    flags.set(CpuFlags::U, true);
-    flags.set(CpuFlags::B, true);
-    push_byte(c, flags.bits())?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2607,13 +2475,11 @@ fn pla<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    c.regs.a = pop_byte(c)?;
-    set_zn_flags(c, c.regs.a);
+    if !decode_only {
+        c.regs.a = pop_byte(c)?;
+        set_zn_flags(c, c.regs.a);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2650,16 +2516,14 @@ fn plp<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // be sure B and U(nused) (always 1) are mantained
-    let b_set_before = CpuFlags::from_bits(c.regs.p).unwrap().contains(CpuFlags::B);
-    c.regs.p = pop_byte(c)?;
-    c.set_cpu_flags(CpuFlags::B, b_set_before);
-    c.set_cpu_flags(CpuFlags::U, true);
+    if !decode_only {
+        // be sure B and U(nused) (always 1) are mantained
+        let b_set_before = CpuFlags::from_bits(c.regs.p).unwrap().contains(CpuFlags::B);
+        c.regs.p = pop_byte(c)?;
+        c.set_cpu_flags(CpuFlags::B, b_set_before);
+        c.set_cpu_flags(CpuFlags::U, true);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2696,21 +2560,18 @@ fn rla<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // perform rol + and internally
+        let prev_p = c.regs.p;
+        rol::<A>(c, d, 0, false, decode_only, true)?;
+
+        // preserve carry
+        let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+        c.regs.p = prev_p;
+        c.set_cpu_flags(CpuFlags::C, is_c_set);
+        // n and z are set according to AND
+        and::<A>(c, d, 0, false, decode_only, true)?;
     }
-
-    // perform rol + and internally
-    let prev_p = c.regs.p;
-    rol::<A>(c, d, 0, false, decode_only, true)?;
-
-    // preserve carry
-    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
-    c.regs.p = prev_p;
-    c.set_cpu_flags(CpuFlags::C, is_c_set);
-    // n and z are set according to AND
-    and::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2751,33 +2612,30 @@ fn rol<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let mut b = A::load(c, d, tgt)?;
+
+        // save current carry
+        let carry = c.is_cpu_flag_set(CpuFlags::C);
+
+        // carry = bit 7
+        c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
+
+        b >>= 1;
+
+        // bit 0 = previous C
+        if carry {
+            b |= 0b00000001
+        } else {
+            b &= 0b11111110
+        }
+
+        // store back
+        A::store(c, d, tgt, b)?;
+        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+        c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
     }
-
-    // read operand
-    let mut b = A::load(c, d, tgt)?;
-
-    // save current carry
-    let carry = c.is_cpu_flag_set(CpuFlags::C);
-
-    // carry = bit 7
-    c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
-
-    b >>= 1;
-
-    // bit 0 = previous C
-    if carry {
-        b |= 0b00000001
-    } else {
-        b &= 0b11111110
-    }
-
-    // store back
-    A::store(c, d, tgt, b)?;
-    c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-    c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2811,35 +2669,32 @@ fn ror<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let mut b = A::load(c, d, tgt)?;
+
+        // save current carry
+        let carry = c.is_cpu_flag_set(CpuFlags::C);
+
+        // save current bit 0
+        let is_bit_0_set = b & 1;
+
+        // shr
+        b <<= 1;
+
+        // set bit 7 and C accordingly
+        if carry {
+            b |= 0b10000000;
+        } else {
+            b &= 0b01111111;
+        }
+        c.set_cpu_flags(CpuFlags::C, is_bit_0_set == 1);
+
+        // store back
+        A::store(c, d, tgt, b)?;
+        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+        c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
     }
-
-    // read operand
-    let mut b = A::load(c, d, tgt)?;
-
-    // save current carry
-    let carry = c.is_cpu_flag_set(CpuFlags::C);
-
-    // save current bit 0
-    let is_bit_0_set = b & 1;
-
-    // shr
-    b <<= 1;
-
-    // set bit 7 and C accordingly
-    if carry {
-        b |= 0b10000000;
-    } else {
-        b &= 0b01111111;
-    }
-    c.set_cpu_flags(CpuFlags::C, is_bit_0_set == 1);
-
-    // store back
-    A::store(c, d, tgt, b)?;
-    c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-    c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2875,22 +2730,19 @@ fn rra<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // perform ror + adc internally
+        let prev_p = c.regs.p;
+        ror::<A>(c, d, 0, false, decode_only, true)?;
+
+        // preserve carry
+        let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+        c.regs.p = prev_p;
+        c.set_cpu_flags(CpuFlags::C, is_c_set);
+
+        // all other flags are set by adc
+        adc::<A>(c, d, 0, false, decode_only, true)?;
     }
-
-    // perform ror + adc internally
-    let prev_p = c.regs.p;
-    ror::<A>(c, d, 0, false, decode_only, true)?;
-
-    // preserve carry
-    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
-    c.regs.p = prev_p;
-    c.set_cpu_flags(CpuFlags::C, is_c_set);
-
-    // all other flags are set by adc
-    adc::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -2929,20 +2781,20 @@ fn rti<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // pull flags, ignoring B and U(nused) (U is always 1 anyway)
+        let is_b_set = c.is_cpu_flag_set(CpuFlags::B);
+        c.regs.p = pop_byte(c)?;
+        c.set_cpu_flags(CpuFlags::B, is_b_set);
+        c.set_cpu_flags(CpuFlags::U, true);
+
+        // pull pc
+        c.regs.pc = pop_word_le(c)?;
     }
-
-    // pull flags, ignoring B and U(nused) (U is always 1 anyway)
-    let is_b_set = c.is_cpu_flag_set(CpuFlags::B);
-    c.regs.p = pop_byte(c)?;
-    c.set_cpu_flags(CpuFlags::B, is_b_set);
-    c.set_cpu_flags(CpuFlags::U, true);
-
-    // pull pc
-    c.regs.pc = pop_word_le(c)?;
-    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((
+        if decode_only { A::len() } else { 0 },
+        in_cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
 /**
@@ -2978,13 +2830,14 @@ fn rts<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    c.regs.pc = pop_word_le(c)?;
-    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
+    if !decode_only {
+        c.regs.pc = pop_word_le(c)?;
+    }
+    Ok((
+        if decode_only { A::len() } else { 0 },
+        in_cycles + if extra_cycle { 1 } else { 0 },
+    ))
 }
 
 /**
@@ -3016,13 +2869,10 @@ fn sax<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        let b = c.regs.a & c.regs.x;
+        A::store(c, d, tgt, b)?;
     }
-
-    let b = c.regs.a & c.regs.x;
-    A::store(c, d, tgt, b)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3060,46 +2910,43 @@ fn sbc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
 
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    // perform non-bcd subtraction (regs.a-b-1+C)
-    let sub: u16 = (c.regs.a as u16)
-        .wrapping_sub(b as u16)
-        .wrapping_sub(1)
-        .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
-
-    if c.is_cpu_flag_set(CpuFlags::D) {
-        // bcd
-        let mut lo: u8 = (c.regs.a & 0x0f)
-            .wrapping_sub(b & 0x0f)
+        // perform non-bcd subtraction (regs.a-b-1+C)
+        let sub: u16 = (c.regs.a as u16)
+            .wrapping_sub(b as u16)
             .wrapping_sub(1)
-            .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u8);
-        let mut hi: u8 = (c.regs.a >> 4).wrapping_sub(b >> 4);
-        if lo & 0x10 != 0 {
-            lo = lo.wrapping_sub(6);
-            hi = hi.wrapping_sub(1);
-        }
-        if hi & 0x10 != 0 {
-            hi = hi.wrapping_sub(6);
-        }
-        c.regs.a = (hi << 4) | (lo & 0x0f);
-    } else {
-        // normal
-        c.regs.a = (sub & 0xff) as u8;
-    }
+            .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
 
-    // set flags
-    c.set_cpu_flags(CpuFlags::C, sub < 0x100);
-    let o = ((c.regs.a as u16) ^ sub) & ((b as u16) ^ sub) & 0x80;
-    c.set_cpu_flags(CpuFlags::V, o != 0);
-    c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-    c.set_cpu_flags(CpuFlags::N, utils::is_signed(c.regs.a));
+        if c.is_cpu_flag_set(CpuFlags::D) {
+            // bcd
+            let mut lo: u8 = (c.regs.a & 0x0f)
+                .wrapping_sub(b & 0x0f)
+                .wrapping_sub(1)
+                .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u8);
+            let mut hi: u8 = (c.regs.a >> 4).wrapping_sub(b >> 4);
+            if lo & 0x10 != 0 {
+                lo = lo.wrapping_sub(6);
+                hi = hi.wrapping_sub(1);
+            }
+            if hi & 0x10 != 0 {
+                hi = hi.wrapping_sub(6);
+            }
+            c.regs.a = (hi << 4) | (lo & 0x0f);
+        } else {
+            // normal
+            c.regs.a = (sub & 0xff) as u8;
+        }
+
+        // set flags
+        c.set_cpu_flags(CpuFlags::C, sub < 0x100);
+        let o = ((c.regs.a as u16) ^ sub) & ((b as u16) ^ sub) & 0x80;
+        c.set_cpu_flags(CpuFlags::V, o != 0);
+        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
+        c.set_cpu_flags(CpuFlags::N, utils::is_signed(c.regs.a));
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3129,21 +2976,18 @@ fn sbx<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        // and
+        let and_res = c.regs.a & c.regs.x;
+
+        // cmp
+        c.regs.x = and_res.wrapping_sub(b);
+        c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
+        set_zn_flags(c, c.regs.x);
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    // and
-    let and_res = c.regs.a & c.regs.x;
-
-    // cmp
-    c.regs.x = and_res.wrapping_sub(b);
-    c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
-    set_zn_flags(c, c.regs.x);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3178,13 +3022,11 @@ fn sec<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // set carry
-    c.set_cpu_flags(CpuFlags::C, true);
+    if !decode_only {
+        // set carry
+        c.set_cpu_flags(CpuFlags::C, true);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3219,13 +3061,11 @@ fn sed<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // set decimal flag
-    c.set_cpu_flags(CpuFlags::D, true);
+    if !decode_only {
+        // set decimal flag
+        c.set_cpu_flags(CpuFlags::D, true);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3260,13 +3100,11 @@ fn sei<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // disable interrupts
-    c.set_cpu_flags(CpuFlags::I, true);
+    if !decode_only {
+        // disable interrupts
+        c.set_cpu_flags(CpuFlags::I, true);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3299,25 +3137,22 @@ fn shx<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // get msb from target address
+        let mut h = (tgt >> 8) as u8;
+
+        // add 1 on msb when page crossing
+        // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+        if extra_cycle_on_page_crossing {
+            h = h.wrapping_add(1);
+        }
+
+        // X & (H + 1)
+        let res = c.regs.x & h.wrapping_add(1);
+
+        // store
+        A::store(c, d, tgt, res)?;
     }
-
-    // get msb from target address
-    let mut h = (tgt >> 8) as u8;
-
-    // add 1 on msb when page crossing
-    // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
-    if extra_cycle_on_page_crossing {
-        h = h.wrapping_add(1);
-    }
-
-    // X & (H + 1)
-    let res = c.regs.x & h.wrapping_add(1);
-
-    // store
-    A::store(c, d, tgt, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3349,25 +3184,22 @@ fn shy<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // get msb from target address
+        let mut h = (tgt >> 8) as u8;
+
+        // add 1 on msb when page crossing
+        // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+        if extra_cycle_on_page_crossing {
+            h = h.wrapping_add(1);
+        }
+
+        // Y & (H + 1)
+        let res = c.regs.y & h.wrapping_add(1);
+
+        // store
+        A::store(c, d, tgt, res)?;
     }
-
-    // get msb from target address
-    let mut h = (tgt >> 8) as u8;
-
-    // add 1 on msb when page crossing
-    // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
-    if extra_cycle_on_page_crossing {
-        h = h.wrapping_add(1);
-    }
-
-    // Y & (H + 1)
-    let res = c.regs.y & h.wrapping_add(1);
-
-    // store
-    A::store(c, d, tgt, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3403,22 +3235,19 @@ fn slo<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // perform asl + ora internally
+        let prev_p = c.regs.p;
+        asl::<A>(c, d, 0, false, decode_only, true)?;
+
+        // preserve carry
+        let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+        c.regs.p = prev_p;
+        c.set_cpu_flags(CpuFlags::C, is_c_set);
+
+        // other flags are set by ora
+        ora::<A>(c, d, 0, false, decode_only, true)?;
     }
-
-    // perform asl + ora internally
-    let prev_p = c.regs.p;
-    asl::<A>(c, d, 0, false, decode_only, true)?;
-
-    // preserve carry
-    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
-    c.regs.p = prev_p;
-    c.set_cpu_flags(CpuFlags::C, is_c_set);
-
-    // other flags are set by ora
-    ora::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3454,22 +3283,19 @@ fn sre<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // perform lsr + eor internally
+        let prev_p = c.regs.p;
+        lsr::<A>(c, d, 0, false, decode_only, true)?;
+
+        // preserve carry
+        let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
+        c.regs.p = prev_p;
+        c.set_cpu_flags(CpuFlags::C, is_c_set);
+
+        // other flags are set by eor
+        eor::<A>(c, d, 0, false, decode_only, true)?;
     }
-
-    // perform lsr + eor internally
-    let prev_p = c.regs.p;
-    lsr::<A>(c, d, 0, false, decode_only, true)?;
-
-    // preserve carry
-    let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
-    c.regs.p = prev_p;
-    c.set_cpu_flags(CpuFlags::C, is_c_set);
-
-    // other flags are set by eor
-    eor::<A>(c, d, 0, false, decode_only, true)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3503,13 +3329,11 @@ fn sta<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // store A in memory
-    A::store(c, d, tgt, c.regs.a)?;
+    if !decode_only {
+        // store A in memory
+        A::store(c, d, tgt, c.regs.a)?;
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3543,13 +3367,11 @@ fn stx<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // store X in memory
-    A::store(c, d, tgt, c.regs.x)?;
+    if !decode_only {
+        // store X in memory
+        A::store(c, d, tgt, c.regs.x)?;
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3583,13 +3405,11 @@ fn sty<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    // store y in memory
-    A::store(c, d, tgt, c.regs.y)?;
+    if !decode_only {
+        // store y in memory
+        A::store(c, d, tgt, c.regs.y)?;
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3621,26 +3441,23 @@ fn tas<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // get msb from target address
+        let mut h = (tgt >> 8) as u8;
+
+        // add 1 on msb when page crossing
+        // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+        if extra_cycle_on_page_crossing {
+            h = h.wrapping_add(1);
+        }
+
+        // set sp
+        c.regs.s = c.regs.a & c.regs.x;
+        let res = c.regs.s & h.wrapping_add(1);
+
+        // store
+        A::store(c, d, tgt, res)?;
     }
-
-    // get msb from target address
-    let mut h = (tgt >> 8) as u8;
-
-    // add 1 on msb when page crossing
-    // [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
-    if extra_cycle_on_page_crossing {
-        h = h.wrapping_add(1);
-    }
-
-    // set sp
-    c.regs.s = c.regs.a & c.regs.x;
-    let res = c.regs.s & h.wrapping_add(1);
-
-    // store
-    A::store(c, d, tgt, res)?;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3677,13 +3494,10 @@ fn tax<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        c.regs.x = c.regs.a;
+        set_zn_flags(c, c.regs.x);
     }
-
-    c.regs.x = c.regs.a;
-    set_zn_flags(c, c.regs.x);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3719,13 +3533,10 @@ fn tay<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        c.regs.y = c.regs.a;
+        set_zn_flags(c, c.regs.y);
     }
-
-    c.regs.y = c.regs.a;
-    set_zn_flags(c, c.regs.y);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3762,13 +3573,11 @@ fn tsx<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
-    }
 
-    c.regs.x = c.regs.s;
-    set_zn_flags(c, c.regs.x);
+    if !decode_only {
+        c.regs.x = c.regs.s;
+        set_zn_flags(c, c.regs.x);
+    }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3805,13 +3614,10 @@ fn txa<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        c.regs.a = c.regs.x;
+        set_zn_flags(c, c.regs.a);
     }
-
-    c.regs.a = c.regs.x;
-    set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3848,12 +3654,9 @@ fn txs<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        c.regs.s = c.regs.x;
     }
-
-    c.regs.s = c.regs.x;
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3890,13 +3693,10 @@ fn tya<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        c.regs.a = c.regs.y;
+        set_zn_flags(c, c.regs.a);
     }
-
-    c.regs.a = c.regs.y;
-    set_zn_flags(c, c.regs.a);
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
@@ -3934,21 +3734,17 @@ fn xaa<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
-    if decode_only {
-        // perform decode only, no execution
-        return Ok((A::len(), 0));
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        // N and Z are set according to the value of the accumulator before the instruction executed
+        set_zn_flags(c, c.regs.a);
+
+        // we choose $ef as constant as specified in [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
+        let k = 0xef;
+        let res: u8 = (c.regs.a | k) & c.regs.x & b;
+        c.regs.a = res;
     }
-
-    // read operand
-    let b = A::load(c, d, tgt)?;
-
-    // N and Z are set according to the value of the accumulator before the instruction executed
-    set_zn_flags(c, c.regs.a);
-
-    // we choose $ef as constant as specified in [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
-    let k = 0xef;
-    let res: u8 = (c.regs.a | k) & c.regs.x & b;
-    c.regs.a = res;
-
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
