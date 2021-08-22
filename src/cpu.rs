@@ -117,8 +117,13 @@ bitflags! {
  * this is called by the cpu to provide the user with notification when reads/writes/irq/nmi occurs.
  */
 pub struct CpuCallbackContext {
+    /// address acessed.
     pub address: u16,
+    /// access size, may be 1 or 2.
+    pub access_size: i8,
+    /// first byte (LE) accessed.
     pub value: u8,
+    /// one of the CpuOperation enums.
     pub operation: CpuOperation,
 }
 
@@ -131,8 +136,8 @@ impl Display for CpuCallbackContext {
             CpuOperation::Read | CpuOperation::Write => {
                 write!(
                     f,
-                    "CALLBACK! type={:?}, address=${:04x}, value=${:02x}",
-                    self.operation, self.address, self.value
+                    "CALLBACK! type={:?}, address=${:04x}, value=${:02x}, access_size={}",
+                    self.operation, self.address, self.value, self.access_size
                 )
                 .expect("");
             }
@@ -252,11 +257,18 @@ impl Cpu {
     /**
      * call installed cpu callback if any.
      */
-    pub(crate) fn call_callback(&mut self, address: u16, value: u8, op: CpuOperation) {
+    pub(crate) fn call_callback(
+        &mut self,
+        address: u16,
+        value: u8,
+        access_size: i8,
+        op: CpuOperation,
+    ) {
         if self.cb.is_some() {
             // call callback
             let ctx = CpuCallbackContext {
                 address: address,
+                access_size: access_size,
                 value: value,
                 operation: op,
             };
@@ -562,14 +574,14 @@ impl Cpu {
     /**
      * internal, triggers irq or nmi
      */
-    fn irq_nmi(&mut self, v: u16) -> Result<(), CpuError> {
+    fn irq_nmi(&mut self, debugger: Option<&Debugger>, v: u16) -> Result<(), CpuError> {
         // push pc and p on stack
-        opcodes::push_word_le(self, self.regs.pc)?;
+        opcodes::push_word_le(self, debugger, self.regs.pc)?;
         // push P with U set
         // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
         let mut flags = CpuFlags::from_bits(self.regs.p).unwrap();
         flags.set(CpuFlags::U, true);
-        opcodes::push_byte(self, flags.bits())?;
+        opcodes::push_byte(self, debugger, flags.bits())?;
 
         // set I
         self.set_cpu_flags(CpuFlags::I, true);
@@ -584,22 +596,22 @@ impl Cpu {
     /**
      * triggers an irq.
      */
-    pub fn irq(&mut self) -> Result<(), CpuError> {
-        let res = self.irq_nmi(Vectors::IRQ as u16);
+    pub fn irq(&mut self, debugger: Option<&Debugger>) -> Result<(), CpuError> {
+        let res = self.irq_nmi(debugger, Vectors::IRQ as u16);
 
         // call callback if any
-        self.call_callback(0, 0, CpuOperation::Irq);
+        self.call_callback(0, 0, 0, CpuOperation::Irq);
         res
     }
 
     /**
      * triggers an nmi.
      */
-    pub fn nmi(&mut self) -> Result<(), CpuError> {
-        let res = self.irq_nmi(Vectors::NMI as u16);
+    pub fn nmi(&mut self, debugger: Option<&Debugger>) -> Result<(), CpuError> {
+        let res = self.irq_nmi(debugger, Vectors::NMI as u16);
 
         // call callback if any
-        self.call_callback(0, 0, CpuOperation::Nmi);
+        self.call_callback(0, 0, 0, CpuOperation::Nmi);
         res
     }
 }

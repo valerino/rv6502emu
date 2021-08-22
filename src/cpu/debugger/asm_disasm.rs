@@ -411,9 +411,6 @@ impl Debugger {
             }
             prev_addr = addr;
         }
-        if res {
-            return true;
-        }
-        return false;
+        res
     }
 }

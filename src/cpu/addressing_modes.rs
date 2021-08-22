@@ -28,7 +28,7 @@
  * SOFTWARE.
  */
 
-use crate::cpu::cpu_error::{CpuError, CpuErrorType};
+use crate::cpu::cpu_error::CpuError;
 use crate::cpu::debugger::breakpoints::BreakpointType;
 use crate::cpu::debugger::Debugger;
 use crate::cpu::{Cpu, CpuOperation};
@@ -94,28 +94,12 @@ pub(crate) trait AddressingMode {
 
         // check if a breakpoint has to be triggered
         if d.is_some() {
-            match d
-                .unwrap()
-                .has_enabled_breakpoint(address, BreakpointType::READ)
-            {
-                Some(idx) => {
-                    // trigger!
-                    let e = CpuError {
-                        t: CpuErrorType::RwBreakpoint,
-                        address: address as usize,
-                        mem_size: 0,
-                        access_size: 1,
-                        bp_idx: idx,
-                        msg: None,
-                    };
-                    return Err(e);
-                }
-                None => (),
-            };
+            d.unwrap()
+                .handle_rw_breakpoint(address, BreakpointType::READ)?
         }
 
         // call callback if any
-        c.call_callback(address, b, CpuOperation::Read);
+        c.call_callback(address, b, 1, CpuOperation::Read);
         Ok(b)
     }
 
@@ -130,28 +114,12 @@ pub(crate) trait AddressingMode {
 
         // check if a breakpoint has to be triggered
         if d.is_some() {
-            match d
-                .unwrap()
-                .has_enabled_breakpoint(address, BreakpointType::WRITE)
-            {
-                Some(idx) => {
-                    // trigger!
-                    let e = CpuError {
-                        t: CpuErrorType::RwBreakpoint,
-                        address: address as usize,
-                        mem_size: 0,
-                        access_size: 1,
-                        bp_idx: idx,
-                        msg: None,
-                    };
-                    return Err(e);
-                }
-                None => (),
-            };
+            d.unwrap()
+                .handle_rw_breakpoint(address, BreakpointType::WRITE)?
         }
 
         // call callback if any
-        c.call_callback(address, b, CpuOperation::Write);
+        c.call_callback(address, b, 1, CpuOperation::Write);
         Ok(())
     }
 }

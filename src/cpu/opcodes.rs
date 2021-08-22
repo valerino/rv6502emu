@@ -32,9 +32,10 @@ use crate::cpu::addressing_modes;
 use crate::cpu::addressing_modes::AddressingModeId::*;
 use crate::cpu::addressing_modes::*;
 use crate::cpu::cpu_error::{CpuError, CpuErrorType};
+use crate::cpu::debugger::breakpoints::BreakpointType;
 use crate::cpu::debugger::Debugger;
 use crate::cpu::CpuFlags;
-use crate::cpu::{Cpu, Vectors};
+use crate::cpu::{Cpu, CpuOperation, Vectors};
 use crate::utils;
 use crate::utils::*;
 use ::function_name::named;
@@ -183,40 +184,81 @@ fn set_zn_flags(c: &mut Cpu, val: u8) {
 /**
  * push byte on the stack
  */
-pub(super) fn push_byte(c: &mut Cpu, b: u8) -> Result<(), CpuError> {
+pub(super) fn push_byte(c: &mut Cpu, d: Option<&Debugger>, b: u8) -> Result<(), CpuError> {
     let mem = c.bus.get_memory();
-    mem.write_byte(0x100 + c.regs.s as usize, b)?;
+    let addr = 0x100 + c.regs.s as usize;
+    mem.write_byte(addr, b)?;
     c.regs.s = c.regs.s.wrapping_sub(1);
+    // handle breakpoint
+    if d.is_some() {
+        d.unwrap()
+            .handle_rw_breakpoint(addr as u16, BreakpointType::WRITE)?
+    }
+
+    // call callback if any
+    c.call_callback(addr as u16, b, 1, CpuOperation::Write);
     Ok(())
 }
 
 /**
  * pop byte off the stack
  */
-fn pop_byte(c: &mut Cpu) -> Result<u8, CpuError> {
+fn pop_byte(c: &mut Cpu, d: Option<&Debugger>) -> Result<u8, CpuError> {
     let mem = c.bus.get_memory();
     c.regs.s = c.regs.s.wrapping_add(1);
-    let b = mem.read_byte(0x100 + c.regs.s as usize)?;
+    let addr = 0x100 + c.regs.s as usize;
+    let b = mem.read_byte(addr)?;
+
+    // handle breakpoint
+    if d.is_some() {
+        d.unwrap()
+            .handle_rw_breakpoint(addr as u16, BreakpointType::READ)?
+    }
+
+    // call callback if any
+    c.call_callback(addr as u16, b, 1, CpuOperation::Read);
     Ok(b)
 }
 
 /**
  * pop word off the stack
  */
-fn pop_word_le(c: &mut Cpu) -> Result<u16, CpuError> {
+fn pop_word_le(c: &mut Cpu, d: Option<&Debugger>) -> Result<u16, CpuError> {
     let mem = c.bus.get_memory();
     c.regs.s = c.regs.s.wrapping_add(2);
-    let w = mem.read_word_le(0x100 + (c.regs.s - 1) as usize)?;
+    let addr = 0x100 + (c.regs.s - 1) as usize;
+
+    let w = mem.read_word_le(addr)?;
+
+    // handle breakpoint
+    if d.is_some() {
+        d.unwrap()
+            .handle_rw_breakpoint(addr as u16, BreakpointType::READ)?
+    }
+
+    // call callback if any
+    c.call_callback(addr as u16, (w & 0xff) as u8, 2, CpuOperation::Read);
+
     Ok(w)
 }
 
 /**
  * push word on the stack
  */
-pub(super) fn push_word_le(c: &mut Cpu, w: u16) -> Result<(), CpuError> {
+pub(super) fn push_word_le(c: &mut Cpu, d: Option<&Debugger>, w: u16) -> Result<(), CpuError> {
     let mem = c.bus.get_memory();
-    mem.write_word_le(0x100 + (c.regs.s - 1) as usize, w)?;
+    let addr = 0x100 + (c.regs.s - 1) as usize;
+    mem.write_word_le(addr, w)?;
     c.regs.s = c.regs.s.wrapping_sub(2);
+
+    // handle breakpoint
+    if d.is_some() {
+        d.unwrap()
+            .handle_rw_breakpoint(addr as u16, BreakpointType::WRITE)?
+    }
+
+    // call callback if any
+    c.call_callback(addr as u16, (w & 0xff) as u8, 2, CpuOperation::Write);
     Ok(())
 }
 
@@ -1013,7 +1055,7 @@ fn bpl<A: AddressingMode>(
 #[named]
 fn brk<A: AddressingMode>(
     c: &mut Cpu,
-    _d: Option<&Debugger>,
+    d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1025,14 +1067,14 @@ fn brk<A: AddressingMode>(
     }
     if !decode_only {
         // push pc and p on stack
-        push_word_le(c, c.regs.pc)?;
+        push_word_le(c, d, c.regs.pc + 2)?;
 
         // push P with U and B set
         // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
         let mut flags = CpuFlags::from_bits(c.regs.p).unwrap();
         flags.set(CpuFlags::B, true);
         flags.set(CpuFlags::U, true);
-        push_byte(c, flags.bits())?;
+        push_byte(c, d, flags.bits())?;
 
         // set I
         c.set_cpu_flags(CpuFlags::I, true);
@@ -1917,7 +1959,7 @@ fn jmp<A: AddressingMode>(
 #[named]
 fn jsr<A: AddressingMode>(
     c: &mut Cpu,
-    _d: Option<&Debugger>,
+    d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1929,7 +1971,11 @@ fn jsr<A: AddressingMode>(
     }
     if !decode_only {
         // push return address
-        push_word_le(c, c.regs.pc.wrapping_add(A::len() as u16).wrapping_sub(1))?;
+        push_word_le(
+            c,
+            d,
+            c.regs.pc.wrapping_add(A::len() as u16).wrapping_sub(1),
+        )?;
 
         // set pc
         c.regs.pc = tgt;
@@ -2392,7 +2438,7 @@ fn ora<A: AddressingMode>(
 #[named]
 fn pha<A: AddressingMode>(
     c: &mut Cpu,
-    _d: Option<&Debugger>,
+    d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2404,7 +2450,7 @@ fn pha<A: AddressingMode>(
     }
 
     if !decode_only {
-        push_byte(c, c.regs.a)?;
+        push_byte(c, d, c.regs.a)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2432,7 +2478,7 @@ fn pha<A: AddressingMode>(
 #[named]
 fn php<A: AddressingMode>(
     c: &mut Cpu,
-    _d: Option<&Debugger>,
+    d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2447,7 +2493,7 @@ fn php<A: AddressingMode>(
         let mut flags = CpuFlags::from_bits(c.regs.p).unwrap();
         flags.set(CpuFlags::U, true);
         flags.set(CpuFlags::B, true);
-        push_byte(c, flags.bits())?;
+        push_byte(c, d, flags.bits())?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2471,7 +2517,7 @@ fn php<A: AddressingMode>(
 #[named]
 fn pla<A: AddressingMode>(
     c: &mut Cpu,
-    _d: Option<&Debugger>,
+    d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2483,7 +2529,7 @@ fn pla<A: AddressingMode>(
     }
 
     if !decode_only {
-        c.regs.a = pop_byte(c)?;
+        c.regs.a = pop_byte(c, d)?;
         set_zn_flags(c, c.regs.a);
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -2512,7 +2558,7 @@ fn pla<A: AddressingMode>(
 #[named]
 fn plp<A: AddressingMode>(
     c: &mut Cpu,
-    _d: Option<&Debugger>,
+    d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2524,7 +2570,7 @@ fn plp<A: AddressingMode>(
     }
 
     if !decode_only {
-        c.regs.p = pop_byte(c)?;
+        c.regs.p = pop_byte(c, d)?;
 
         // ensure flag Unused is set
         c.set_cpu_flags(CpuFlags::U, true);
@@ -2776,7 +2822,7 @@ fn rra<A: AddressingMode>(
 #[named]
 fn rti<A: AddressingMode>(
     c: &mut Cpu,
-    _d: Option<&Debugger>,
+    d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2787,13 +2833,13 @@ fn rti<A: AddressingMode>(
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
-        c.regs.p = pop_byte(c)?;
+        c.regs.p = pop_byte(c, d)?;
 
         // ensure flag Unused is set
         c.set_cpu_flags(CpuFlags::U, true);
 
         // pull pc
-        c.regs.pc = pop_word_le(c)?;
+        c.regs.pc = pop_word_le(c, d)?;
     }
     Ok((
         if decode_only { A::len() } else { 0 },
@@ -2824,7 +2870,7 @@ fn rti<A: AddressingMode>(
 #[named]
 fn rts<A: AddressingMode>(
     c: &mut Cpu,
-    _d: Option<&Debugger>,
+    d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2836,7 +2882,7 @@ fn rts<A: AddressingMode>(
     }
 
     if !decode_only {
-        c.regs.pc = pop_word_le(c)?.wrapping_add(1);
+        c.regs.pc = pop_word_le(c, d)?.wrapping_add(1);
     }
     Ok((
         if decode_only { A::len() } else { 0 },

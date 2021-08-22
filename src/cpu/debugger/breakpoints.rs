@@ -31,6 +31,7 @@
 use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuErrorType;
 use crate::cpu::debugger::Debugger;
+use crate::cpu::CpuError;
 use crate::cpu::{Cpu, Vectors};
 use crate::utils::*;
 use bitflags::bitflags;
@@ -134,6 +135,34 @@ impl Display for Bp {
 }
 
 impl Debugger {
+    /**
+     * check if an rw breakpoint triggers at address (returns a CpuError::RwBreakpoint in case)
+     */
+    pub(crate) fn handle_rw_breakpoint(
+        &self,
+        address: u16,
+        t: BreakpointType,
+    ) -> Result<(), CpuError> {
+        // check if a breakpoint has to be triggered
+        match self.has_enabled_breakpoint(address, t) {
+            Some(idx) => {
+                // trigger!
+                let e = CpuError {
+                    t: CpuErrorType::RwBreakpoint,
+                    address: address as usize,
+                    mem_size: 0,
+                    access_size: 1,
+                    bp_idx: idx,
+                    msg: None,
+                };
+                return Err(e);
+            }
+            None => (),
+        };
+
+        Ok(())
+    }
+
     /**
      * add a breakpoint.
      *
