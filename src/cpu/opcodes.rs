@@ -2305,7 +2305,7 @@ fn nop<A: AddressingMode>(
     _d: Option<&Debugger>,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
+    _decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
     let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;

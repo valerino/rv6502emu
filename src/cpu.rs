@@ -359,6 +359,15 @@ impl Cpu {
     }
 
     /**
+     * increment pc and the elapsed cycles
+     */
+    fn inc_pc(&mut self, instr_size: u16, opcode_cycles: usize) {
+        // advance pc and increment the elapsed cycles
+        self.regs.pc = self.regs.pc.wrapping_add(instr_size);
+        self.cycles = self.cycles.wrapping_add(opcode_cycles);
+    }
+
+    /**
      * run the cpu for the given cycles, optionally with a debugger attached.
      *
      * pass 0 to run indefinitely.
@@ -366,7 +375,7 @@ impl Cpu {
      * > note that reset() must be called first to set the start address !
      */
     pub fn run(&mut self, debugger: Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
-        let mut bp_rw_triggered = false;
+        let mut bp_triggered = false;
         let mut instr_size: i8 = 0;
 
         // construct an empty, disabled, debugger to use when None is passed in
@@ -375,16 +384,17 @@ impl Cpu {
         }
         let mut empty_dbg = Debugger::new(false);
         let dbg = debugger.unwrap_or(&mut empty_dbg);
-        let mut silence_output = true;
+        let mut silence_output = false;
         let mut is_error = false;
+        let mut opcode_cycles: usize = 0;
+        let mut run_cycles: usize = 0;
 
         // loop
         'interpreter: loop {
-            // fetch an instruction and get opcode
+            // fetch
             let b = self.fetch()?;
-            let (opcode_f, opcode_cycles, add_extra_cycle_on_page_crossing, mrk) =
+            let (opcode_f, in_cycles, add_extra_cycle_on_page_crossing, mrk) =
                 opcodes::OPCODE_MATRIX[b as usize];
-
             if !is_error {
                 if !silence_output && dbg.show_registers_before_opcode {
                     // show registers
@@ -435,9 +445,11 @@ impl Cpu {
                             continue 'interpreter;
                         }
                     }
-                    Ok(_) => (()),
+                    Ok((a, _)) => {
+                        instr_size = a;
+                    }
                 };
-                // check if we have a breakpoint at pc
+                // check if we have an exec breakpoint at pc
                 if self.debug {
                     match dbg.has_enabled_breakpoint(
                         self.regs.pc,
@@ -446,6 +458,7 @@ impl Cpu {
                         None => (),
                         Some(idx) => {
                             dbg.going = false;
+                            bp_triggered = true;
                             if !silence_output {
                                 debug_out_text(&format!("breakpoint {} triggered!", idx));
                             }
@@ -475,73 +488,60 @@ impl Cpu {
                 }
             }
             match cmd.as_ref() {
-                "g" => {
-                    bp_rw_triggered = false;
-                    self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
-                    continue 'interpreter;
-                }
                 "p" => {
                     silence_output = false;
-                    if bp_rw_triggered {
-                        //println!("advancing");
-                        // advance pc of the previous instruction size, flag off the bp rw trigger, and restart loop
-                        self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
-                        continue 'interpreter;
-                    }
-
-                    // execute
-                    let elapsed: usize;
-                    let _ = match opcode_f(
-                        self,
-                        Some(dbg),
-                        opcode_cycles,
-                        add_extra_cycle_on_page_crossing,
-                        false, // decode only
-                        true,  // quiet, do not print instruction again
-                    ) {
-                        Ok((a, b)) => {
-                            instr_size = a;
-                            elapsed = b;
-                        }
-                        Err(e) => {
-                            if e.t == CpuErrorType::RwBreakpoint {
-                                // an r/w breakpoint has triggered, opcode has not executed.
-                                if !silence_output {
-                                    debug_out_text(&format!(
-                                        "R/W breakpoint {} triggered!",
-                                        e.bp_idx
-                                    ));
-                                }
-                                instr_size = e.instr_size;
-                                elapsed = opcode_cycles as usize
-                                    + add_extra_cycle_on_page_crossing as usize;
-                                dbg.going = false;
-                                bp_rw_triggered = true;
-                                silence_output = true;
-                            } else {
-                                // report error and break
-                                debug_out_text(&e);
-                                silence_output = true;
-                                if !self.debug {
-                                    // unrecoverable
-                                    break;
-                                } else {
-                                    // either, this will stop in the debugger
+                    if !bp_triggered {
+                        // execute decoded instruction
+                        let _ = match opcode_f(
+                            self,
+                            Some(dbg),
+                            in_cycles,
+                            add_extra_cycle_on_page_crossing,
+                            false, // decode only
+                            true,  // quiet, do not print instruction again
+                        ) {
+                            Ok((_instr_size, _out_cycles)) => {
+                                instr_size = _instr_size;
+                                opcode_cycles = _out_cycles;
+                            }
+                            Err(e) => {
+                                if e.t == CpuErrorType::RwBreakpoint {
+                                    // an r/w breakpoint has triggered, opcode has not executed.
+                                    if !silence_output {
+                                        debug_out_text(&format!(
+                                            "R/W breakpoint {} triggered!",
+                                            e.bp_idx
+                                        ));
+                                    }
                                     dbg.going = false;
+                                    bp_triggered = true;
                                     is_error = true;
                                     continue 'interpreter;
+                                } else {
+                                    // report error and break
+                                    debug_out_text(&e);
+                                    if !self.debug {
+                                        // unrecoverable
+                                        break;
+                                    } else {
+                                        // either, this will stop in the debugger
+                                        dbg.going = false;
+                                        is_error = true;
+                                        continue 'interpreter;
+                                    }
                                 }
                             }
-                        }
-                    };
+                        };
+                    } else {
+                        // a bp has triggered, reset conditions, we will then just advance pc and cycles for the decoded instruction
+                        bp_triggered = false;
+                        is_error = false;
+                    }
 
                     // step, advance pc and increment the elapsed cycles
-                    if !bp_rw_triggered {
-                        // increment pc only if an rw bp has NOT triggered
-                        self.regs.pc = self.regs.pc.wrapping_add(instr_size as u16);
-                    }
-                    self.cycles = self.cycles.wrapping_add(elapsed);
-                    if cycles != 0 && elapsed >= cycles {
+                    self.inc_pc(instr_size as u16, opcode_cycles);
+                    run_cycles = run_cycles.wrapping_add(opcode_cycles);
+                    if cycles != 0 && run_cycles >= cycles {
                         // we're done
                         break 'interpreter;
                     }
@@ -552,7 +552,7 @@ impl Cpu {
                 }
                 "*" => {
                     silence_output = true;
-                    bp_rw_triggered = false;
+                    bp_triggered = false;
                 }
                 _ => {}
             }

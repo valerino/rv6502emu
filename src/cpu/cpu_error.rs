@@ -78,8 +78,6 @@ pub struct CpuError {
     pub mem_size: usize,
     /// the breakpoint index which triggered, if t is RwBreakpoint.
     pub bp_idx: i8,
-    /// triggering instruction size, if t is RwBreakpoint.
-    pub instr_size: i8,
     /// an optional message.
     pub msg: Option<String>,
 }
@@ -124,7 +122,6 @@ impl From<std::io::Error> for CpuError {
             address: 0,
             mem_size: 0,
             access_size: 0,
-            instr_size: 0,
             bp_idx: 0,
             msg: Some(err.to_string()),
         };
@@ -141,7 +138,6 @@ impl CpuError {
             address: 0,
             mem_size: 0,
             access_size: 0,
-            instr_size: 0,
             bp_idx: 0,
             msg: m,
         };
@@ -168,7 +164,6 @@ pub(crate) fn check_address_boundaries(
             address: address,
             mem_size: mem_size,
             access_size: access_size,
-            instr_size: 0,
             bp_idx: 0,
             msg: msg,
         };
