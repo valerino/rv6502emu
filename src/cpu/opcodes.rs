@@ -181,16 +181,6 @@ fn set_zn_flags(c: &mut Cpu, val: u8) {
 }
 
 /**
- * push word on the stack
- */
-pub(super) fn push_word_le(c: &mut Cpu, w: u16) -> Result<(), CpuError> {
-    let mem = c.bus.get_memory();
-    mem.write_word_le(0x100 + (c.regs.s - 1) as usize, w)?;
-    c.regs.s = c.regs.s.wrapping_sub(2);
-    Ok(())
-}
-
-/**
  * push byte on the stack
  */
 pub(super) fn push_byte(c: &mut Cpu, b: u8) -> Result<(), CpuError> {
@@ -216,8 +206,18 @@ fn pop_byte(c: &mut Cpu) -> Result<u8, CpuError> {
 fn pop_word_le(c: &mut Cpu) -> Result<u16, CpuError> {
     let mem = c.bus.get_memory();
     c.regs.s = c.regs.s.wrapping_add(2);
-    let w = mem.read_word_le(0x100 + c.regs.s as usize)?;
+    let w = mem.read_word_le(0x100 + (c.regs.s - 1) as usize)?;
     Ok(w)
+}
+
+/**
+ * push word on the stack
+ */
+pub(super) fn push_word_le(c: &mut Cpu, w: u16) -> Result<(), CpuError> {
+    let mem = c.bus.get_memory();
+    mem.write_word_le(0x100 + (c.regs.s - 1) as usize, w)?;
+    c.regs.s = c.regs.s.wrapping_sub(2);
+    Ok(())
 }
 
 #[named]
@@ -1026,10 +1026,16 @@ fn brk<A: AddressingMode>(
     if !decode_only {
         // push pc and p on stack
         push_word_le(c, c.regs.pc)?;
-        push_byte(c, c.regs.p)?;
 
-        // set break flag
-        c.set_cpu_flags(CpuFlags::B, true);
+        // push P with U and B set
+        // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
+        let mut flags = CpuFlags::from_bits(c.regs.p).unwrap();
+        flags.set(CpuFlags::B, true);
+        flags.set(CpuFlags::U, true);
+        push_byte(c, flags.bits())?;
+
+        // set I
+        c.set_cpu_flags(CpuFlags::I, true);
 
         // set pc to address contained at irq vector
         let addr = c.bus.get_memory().read_word_le(Vectors::IRQ as usize)?;
@@ -2518,10 +2524,9 @@ fn plp<A: AddressingMode>(
     }
 
     if !decode_only {
-        // be sure B and U(nused) (always 1) are mantained
-        let b_set_before = CpuFlags::from_bits(c.regs.p).unwrap().contains(CpuFlags::B);
         c.regs.p = pop_byte(c)?;
-        c.set_cpu_flags(CpuFlags::B, b_set_before);
+
+        // ensure flag Unused is set
         c.set_cpu_flags(CpuFlags::U, true);
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -2782,10 +2787,9 @@ fn rti<A: AddressingMode>(
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
-        // pull flags, ignoring B and U(nused) (U is always 1 anyway)
-        let is_b_set = c.is_cpu_flag_set(CpuFlags::B);
         c.regs.p = pop_byte(c)?;
-        c.set_cpu_flags(CpuFlags::B, is_b_set);
+
+        // ensure flag Unused is set
         c.set_cpu_flags(CpuFlags::U, true);
 
         // pull pc
@@ -2832,7 +2836,7 @@ fn rts<A: AddressingMode>(
     }
 
     if !decode_only {
-        c.regs.pc = pop_word_le(c)?;
+        c.regs.pc = pop_word_le(c)?.wrapping_add(1);
     }
     Ok((
         if decode_only { A::len() } else { 0 },

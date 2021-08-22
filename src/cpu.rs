@@ -153,7 +153,7 @@ impl Display for Registers {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(
             f,
-            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, S: ${:02x}, P: {:02x}({})",
+            "PC: ${:04x}, A: ${:02x}, X: ${:02x}, Y: ${:02x}, S: ${:02x}, P: ${:02x}({})",
             self.pc,
             self.a,
             self.x,
@@ -345,7 +345,7 @@ impl Cpu {
             // at reset, we read PC from RESET vector
             pc: addr,
         };
-
+        self.cycles = 7;
         Ok(())
     }
 
@@ -375,7 +375,7 @@ impl Cpu {
      * > note that reset() must be called first to set the start address !
      */
     pub fn run(&mut self, debugger: Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
-        let mut bp_triggered = false;
+        let mut bp_rw_triggered = false;
         let mut instr_size: i8 = 0;
 
         // construct an empty, disabled, debugger to use when None is passed in
@@ -458,7 +458,6 @@ impl Cpu {
                         None => (),
                         Some(idx) => {
                             dbg.going = false;
-                            bp_triggered = true;
                             if !silence_output {
                                 debug_out_text(&format!("breakpoint {} triggered!", idx));
                             }
@@ -490,7 +489,7 @@ impl Cpu {
             match cmd.as_ref() {
                 "p" => {
                     silence_output = false;
-                    if !bp_triggered {
+                    if !bp_rw_triggered {
                         // execute decoded instruction
                         let _ = match opcode_f(
                             self,
@@ -514,7 +513,7 @@ impl Cpu {
                                         ));
                                     }
                                     dbg.going = false;
-                                    bp_triggered = true;
+                                    bp_rw_triggered = true;
                                     is_error = true;
                                     continue 'interpreter;
                                 } else {
@@ -534,7 +533,7 @@ impl Cpu {
                         };
                     } else {
                         // a bp has triggered, reset conditions, we will then just advance pc and cycles for the decoded instruction
-                        bp_triggered = false;
+                        bp_rw_triggered = false;
                         is_error = false;
                     }
 
@@ -552,7 +551,7 @@ impl Cpu {
                 }
                 "*" => {
                     silence_output = true;
-                    bp_triggered = false;
+                    bp_rw_triggered = false;
                 }
                 _ => {}
             }
@@ -566,10 +565,14 @@ impl Cpu {
     fn irq_nmi(&mut self, v: u16) -> Result<(), CpuError> {
         // push pc and p on stack
         opcodes::push_word_le(self, self.regs.pc)?;
-        opcodes::push_byte(self, self.regs.p)?;
+        // push P with U set
+        // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
+        let mut flags = CpuFlags::from_bits(self.regs.p).unwrap();
+        flags.set(CpuFlags::U, true);
+        opcodes::push_byte(self, flags.bits())?;
 
-        // clear break flag
-        self.set_cpu_flags(CpuFlags::B, false);
+        // set I
+        self.set_cpu_flags(CpuFlags::I, true);
 
         // set pc to address contained at vector
         let addr = self.bus.get_memory().read_word_le(v as usize)?;

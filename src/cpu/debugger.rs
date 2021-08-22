@@ -273,7 +273,6 @@ impl Debugger {
                 .row_width(16)
                 .finish();
             debug_out_text(&dump);
-            debug_out_text(&"\n");
         }
         return true;
     }

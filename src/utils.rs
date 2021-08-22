@@ -80,11 +80,11 @@ pub(crate) fn debug_out_text(d: &dyn Display) {
 }
 
 /**
- * display registers, currently implemented to stdout
+ * display registers and cycles, currently implemented to stdout
  */
 pub(crate) fn debug_out_registers(c: &Cpu) {
     if log::log_enabled!(Level::max()) {
         //debug!("{}", self.regs);
-        println!("\t{}", c.regs);
+        println!("\t{}, cycles={}", c.regs, c.cycles);
     }
 }
