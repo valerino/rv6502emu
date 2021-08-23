@@ -70,7 +70,7 @@ lazy_static! {
      * - https://www.masswerk.at/6502/6502_instruction_set.html
      * - https://problemkaputt.de/2k6specs.htm#cpu65xxmicroprocessor
      * - http://www.oxyron.de/html/opcodes02.html
-     * - http://www.obelisk.me.uk/6502/reference.html
+     * - http://www.obelisk.me.uk/6502/reference.html (WARNING: ASL, LSR, ROL, ROR info is wrong! flag Z is set when RESULT=0, not when A=0. i fixed this in functions comments.)
      * - [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
      */
     pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool, quiet: bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
@@ -621,7 +621,7 @@ fn arr<A: AddressingMode>(
  * Processor Status after use:
  *
  * C	Carry Flag	Set to contents of old bit 7
- * Z	Zero Flag	Set if A = 0
+ * Z	Zero Flag	Set if result = 0
  * I	Interrupt Disable	Not affected
  * D	Decimal Mode Flag	Not affected
  * B	Break Command	Not affected
@@ -656,8 +656,7 @@ fn asl<A: AddressingMode>(
 
         // shl
         b <<= 1;
-        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-        c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
+        set_zn_flags(c, b);
 
         // store back
         A::store(c, d, tgt, b)?;
@@ -2637,7 +2636,7 @@ fn rla<A: AddressingMode>(
  * Processor Status after use:
  *
  *  C	Carry Flag	Set to contents of old bit 7
- * Z	Zero Flag	Set if A = 0
+ * Z	Zero Flag	Set if result = 0
  * I	Interrupt Disable	Not affected
  * D	Decimal Mode Flag	Not affected
  * B	Break Command	Not affected
@@ -2685,8 +2684,7 @@ fn rol<A: AddressingMode>(
 
         // store back
         A::store(c, d, tgt, b)?;
-        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-        c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
+        set_zn_flags(c, b);
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2701,7 +2699,7 @@ fn rol<A: AddressingMode>(
  * Processor Status after use:
  *
  * C	Carry Flag	        Set to contents of old bit 0
- * Z	Zero Flag	        Set if A = 0
+ * Z	Zero Flag	        Set if result = 0
  * I	Interrupt Disable	Not affected
  * D	Decimal Mode Flag	Not affected
  * B	Break Command	    Not affected
@@ -2744,8 +2742,7 @@ fn ror<A: AddressingMode>(
 
         // store back
         A::store(c, d, tgt, b)?;
-        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-        c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
+        set_zn_flags(c, b);
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
