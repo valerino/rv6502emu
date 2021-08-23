@@ -26,7 +26,7 @@ pub fn main() {
 
     // run with a debugger attached, setting a breakpoint before starting
     let mut dbg = Debugger::new(true);
-    dbg.parse_cmd(&mut c, "bx $16e7");
+    dbg.parse_cmd(&mut c, "bx $2402");
     dbg.parse_cmd(&mut c, "o");
     // run !
     c.run(Some(&mut dbg), 0).unwrap();

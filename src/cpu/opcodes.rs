@@ -2572,7 +2572,8 @@ fn plp<A: AddressingMode>(
     if !decode_only {
         c.regs.p = pop_byte(c, d)?;
 
-        // ensure flag Unused is set
+        // ensure flag Unused is set and B is unset
+        c.set_cpu_flags(CpuFlags::B, false);
         c.set_cpu_flags(CpuFlags::U, true);
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -2673,7 +2674,7 @@ fn rol<A: AddressingMode>(
         // carry = bit 7
         c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
 
-        b >>= 1;
+        b <<= 1;
 
         // bit 0 = previous C
         if carry {
@@ -2731,7 +2732,7 @@ fn ror<A: AddressingMode>(
         let is_bit_0_set = b & 1;
 
         // shr
-        b <<= 1;
+        b >>= 1;
 
         // set bit 7 and C accordingly
         if carry {
@@ -2835,7 +2836,8 @@ fn rti<A: AddressingMode>(
     if !decode_only {
         c.regs.p = pop_byte(c, d)?;
 
-        // ensure flag Unused is set
+        // ensure flag Unused is set and B is unset
+        c.set_cpu_flags(CpuFlags::B, false);
         c.set_cpu_flags(CpuFlags::U, true);
 
         // pull pc
