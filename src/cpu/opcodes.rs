@@ -262,7 +262,6 @@ pub(super) fn push_word_le(c: &mut Cpu, d: Option<&Debugger>, w: u16) -> Result<
     Ok(())
 }
 
-#[named]
 /**
  * ADC - Add with Carry
  *
@@ -294,6 +293,7 @@ pub(super) fn push_word_le(c: &mut Cpu, d: Option<&Debugger>, w: u16) -> Result<
  *
  * ADC implementation (including decimal mode support) converted from c code, taken from https://github.com/DavidBuchanan314/6502-emu/blob/master/6502.c
  */
+#[named]
 fn adc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
@@ -311,6 +311,7 @@ fn adc<A: AddressingMode>(
         // read operand
         let b = A::load(c, d, tgt)?;
 
+        /*
         // perform the addition (regs.a+b+C)
         let mut sum: u16;
         if c.is_cpu_flag_set(CpuFlags::D) {
@@ -340,6 +341,50 @@ fn adc<A: AddressingMode>(
         c.set_cpu_flags(CpuFlags::V, o != 0);
         c.regs.a = (sum & 0xff) as u8;
         set_zn_flags(c, c.regs.a);
+        */
+        let mut result: u16 =
+            u16::from(c.regs.a) + u16::from(b) + c.is_cpu_flag_set(CpuFlags::C) as u16;
+
+        //Only run if the CPU is not built in NES mode
+        //TODO: Make sure cpu is removed as dead code in nes builds
+        if c.is_cpu_flag_set(CpuFlags::D) {
+            let mut sum = (c.regs.a & 0xf) + (b & 0xf) + c.is_cpu_flag_set(CpuFlags::C) as u8;
+            if sum >= 0xa {
+                sum = ((sum + 0x6) & 0xf) + 0x10;
+            }
+            let mut sum = (c.regs.a & 0xf0) as u16 + (b & 0xf0) as u16 + sum as u16;
+            c.set_cpu_flags(CpuFlags::Z, result & 0xff == 0);
+            c.set_cpu_flags(CpuFlags::N, (sum & 0x80) > 0);
+            c.set_cpu_flags(
+                CpuFlags::V,
+                (!(c.regs.a ^ b) & (c.regs.a ^ sum as u8) & c.is_cpu_flag_set(CpuFlags::N) as u8)
+                    > 0,
+            );
+            if sum >= 0xa0 {
+                sum += 0x60;
+            }
+            c.set_cpu_flags(CpuFlags::C, sum >= 0x100);
+            result = sum & 0xff;
+        } else {
+            //Set the Carry flag for chain adding multi byte numbers
+            c.set_cpu_flags(CpuFlags::C, result > u16::from(u8::max_value()));
+            c.set_cpu_flags(CpuFlags::Z, result as u8 == 0);
+            //Set the Overflow flag if a signed overflow has occurred
+            c.set_cpu_flags(
+                CpuFlags::V,
+                (!(c.regs.a ^ b)
+                    & (c.regs.a ^ result as u8)
+                    & c.is_cpu_flag_set(CpuFlags::N) as u8)
+                    > 0,
+            );
+            // Negative flag is in bit 7, so it can be used to test if the result is negative,
+            // because a negative value will also have a 1 in bit 7
+            c.set_cpu_flags(
+                CpuFlags::N,
+                result as u8 & c.is_cpu_flag_set(CpuFlags::N) as u8 > 0,
+            );
+        }
+        c.regs.a = result as u8;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2963,6 +3008,7 @@ fn sbc<A: AddressingMode>(
         // read operand
         let b = A::load(c, d, tgt)?;
 
+        /*
         // perform non-bcd subtraction (regs.a-b-1+C)
         let sub: u16 = (c.regs.a as u16)
             .wrapping_sub(b as u16)
@@ -2995,6 +3041,40 @@ fn sbc<A: AddressingMode>(
         c.set_cpu_flags(CpuFlags::V, o != 0);
         c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
         c.set_cpu_flags(CpuFlags::N, utils::is_signed(c.regs.a));
+        */
+
+        let carry = c.is_cpu_flag_set(CpuFlags::C);
+
+        let mut result = u16::from(c.regs.a) + u16::from(!b) + carry as u16;
+        // set the Carry flag for chain adding multi byte numbers
+        c.set_cpu_flags(CpuFlags::C, result > u16::from(u8::max_value()));
+        c.set_cpu_flags(CpuFlags::Z, result as u8 == 0);
+        // set the Overflow flag if a signed overflow has occurred
+        c.set_cpu_flags(
+            CpuFlags::V,
+            ((c.regs.a ^ b) & (c.regs.a ^ result as u8) & c.is_cpu_flag_set(CpuFlags::N) as u8) > 0,
+        );
+        // negative flag is in bit 7, so it can be used to test if the result is negative, because a negative value
+        // will also have a 1 in bit 7
+        c.set_cpu_flags(
+            CpuFlags::N,
+            result as u8 & c.is_cpu_flag_set(CpuFlags::N) as u8 > 0,
+        );
+
+        if c.is_cpu_flag_set(CpuFlags::D) {
+            let value = b as i16;
+
+            let mut sum = (c.regs.a & 0xf) as i16 - (value & 0xf) + carry as i16 - 1;
+            if sum < 0 {
+                sum = ((sum - 0x6) & 0xf) - 0x10;
+            }
+            let mut sum = (c.regs.a & 0xf0) as i16 - (value & 0xf0) + sum;
+            if sum < 0 {
+                sum -= 0x60;
+            }
+            result = (sum & 0xff) as u16;
+        }
+        c.regs.a = result as u8;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
