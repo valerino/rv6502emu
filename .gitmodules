@@ -1,1 +1,4 @@
 
+[submodule "tests/6502_65C02_functional_tests"]
+	path = tests/6502_65C02_functional_tests
+	url = git@github.com:valerino/6502_65C02_functional_tests.git
