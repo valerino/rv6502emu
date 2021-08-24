@@ -262,7 +262,6 @@ pub(super) fn push_word_le(c: &mut Cpu, d: Option<&Debugger>, w: u16) -> Result<
     Ok(())
 }
 
-#[named]
 /**
  * ADC - Add with Carry
  *
@@ -294,6 +293,7 @@ pub(super) fn push_word_le(c: &mut Cpu, d: Option<&Debugger>, w: u16) -> Result<
  *
  * ADC implementation (including decimal mode support) converted from c code, taken from https://github.com/DavidBuchanan314/6502-emu/blob/master/6502.c
  */
+#[named]
 fn adc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
@@ -333,7 +333,6 @@ fn adc<A: AddressingMode>(
                 .wrapping_add(b as u16)
                 .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
         }
-
         // set flags
         c.set_cpu_flags(CpuFlags::C, sum > 0xff);
         let o = ((c.regs.a as u16) ^ sum) & ((b as u16) ^ sum) & 0x80;
