@@ -255,7 +255,7 @@ impl Debugger {
                             println!("{}", e);
                             return false;
                         }
-                        Ok(_) => println!("file saved!"),
+                        Ok(_) => println!("file {} correctly saved!", file_path),
                     };
                 }
             };
@@ -307,7 +307,7 @@ impl Debugger {
                 println!("{}", e);
                 return false;
             }
-            Ok(()) => println!("{} correctly loaded at ${:04x} !", file_path, addr),
+            Ok(()) => {}
         };
         return true;
     }

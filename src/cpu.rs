@@ -230,6 +230,9 @@ pub struct Cpu {
     /// running under debugger ?
     debug: bool,
 
+    /// forces run() to exit
+    pub done: bool,
+
     /// the bus.
     pub bus: Box<dyn Bus>,
 
@@ -303,6 +306,7 @@ impl Cpu {
             cycles: 0,
             bus: b,
             cb: cb,
+            done: false,
             debug: false,
         };
         c
@@ -349,6 +353,7 @@ impl Cpu {
             pc: addr,
         };
         self.cycles = 7;
+        self.done = false;
         Ok(())
     }
 
@@ -498,6 +503,11 @@ impl Cpu {
                     if !bp_rw_triggered {
                         // call callback if any
                         self.call_callback(self.regs.pc, 0, 0, CpuOperation::Exec);
+                        // check if done has been set
+                        if self.done {
+                            // exiting
+                            break 'interpreter;
+                        }
 
                         // execute decoded instruction
                         let _ = match opcode_f(
