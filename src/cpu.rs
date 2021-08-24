@@ -60,6 +60,7 @@ pub struct Registers {
  */
 #[derive(Debug, PartialEq)]
 pub enum CpuOperation {
+    Exec,
     Read,
     Write,
     Irq,
@@ -141,7 +142,7 @@ impl Display for CpuCallbackContext {
                 )
                 .expect("");
             }
-            CpuOperation::Brk => {
+            CpuOperation::Brk | CpuOperation::Exec => {
                 write!(
                     f,
                     "CALLBACK! type={:?}, address=${:04x}",
@@ -241,17 +242,7 @@ impl Cpu {
      * activate logging on stdout through env_logger (max level).
      */
     pub fn enable_logging(&self, enable: bool) {
-        if enable == true {
-            let _ = env_logger::builder()
-                .filter_level(log::LevelFilter::max())
-                .try_init();
-            log::set_max_level(log::LevelFilter::max());
-        } else {
-            let _ = env_logger::builder()
-                .filter_level(log::LevelFilter::Off)
-                .try_init();
-            log::set_max_level(log::LevelFilter::Off);
-        }
+        enable_logging_internal(enable)
     }
 
     /**
@@ -409,8 +400,10 @@ impl Cpu {
                 opcodes::OPCODE_MATRIX[b as usize];
             if !is_error {
                 if !silence_output && dbg.show_registers_before_opcode {
-                    // show registers
-                    debug_out_registers(self);
+                    if log_enabled() {
+                        // show registers
+                        debug_out_registers(self);
+                    }
                 }
 
                 // check boundaries
@@ -422,7 +415,7 @@ impl Cpu {
                     None,
                 ) {
                     Err(e) => {
-                        debug_out_text(&e);
+                        println!("{}", e);
                         if !self.debug {
                             // unrecoverable
                             break 'interpreter;
@@ -446,7 +439,7 @@ impl Cpu {
                     silence_output, // quiet
                 ) {
                     Err(e) => {
-                        debug_out_text(&e);
+                        println!("{}", e);
                         if !self.debug {
                             // unrecoverable
                             break 'interpreter;
@@ -472,7 +465,7 @@ impl Cpu {
                         Some(idx) => {
                             dbg.going = false;
                             if !silence_output {
-                                debug_out_text(&format!("breakpoint {} triggered!", idx));
+                                println!("breakpoint {} triggered!", idx);
                             }
                         }
                     };
@@ -503,6 +496,9 @@ impl Cpu {
                 "p" => {
                     silence_output = false;
                     if !bp_rw_triggered {
+                        // call callback if any
+                        self.call_callback(self.regs.pc, 0, 0, CpuOperation::Exec);
+
                         // execute decoded instruction
                         let _ = match opcode_f(
                             self,
@@ -520,10 +516,7 @@ impl Cpu {
                                 if e.t == CpuErrorType::RwBreakpoint {
                                     // an r/w breakpoint has triggered, opcode has not executed.
                                     if !silence_output {
-                                        debug_out_text(&format!(
-                                            "R/W breakpoint {} triggered!",
-                                            e.bp_idx
-                                        ));
+                                        println!("R/W breakpoint {} triggered!", e.bp_idx);
                                     }
                                     dbg.going = false;
                                     bp_rw_triggered = true;
@@ -531,7 +524,7 @@ impl Cpu {
                                     continue 'interpreter;
                                 } else {
                                     // report error and break
-                                    debug_out_text(&e);
+                                    println!("{}", e);
                                     if !self.debug {
                                         // unrecoverable
                                         break;

@@ -79,17 +79,14 @@ impl Debugger {
         // disassemble
         c.regs.pc = addr;
         let mut instr_count: u16 = 0;
-        debug_out_text(&format!(
-            "disassembling {} instructions at ${:04x}\n",
-            n, addr
-        ));
+        println!("disassembling {} instructions at ${:04x}\n", n, addr);
         loop {
             // fetch an instruction
             let b: u8;
             match c.fetch() {
                 Err(e) => {
                     res = false;
-                    debug_out_text(&e);
+                    println!("{}", e);
                     break;
                 }
                 Ok(ok) => b = ok,
@@ -105,7 +102,7 @@ impl Debugger {
                 None,
             ) {
                 Err(e) => {
-                    debug_out_text(&e);
+                    println!("{}", e);
                     res = false;
                     break;
                 }
@@ -114,7 +111,7 @@ impl Debugger {
             // decode
             match opcode_f(c, None, 0, false, true, false) {
                 Err(e) => {
-                    debug_out_text(&e);
+                    println!("{}", e);
                     res = false;
                     break;
                 }
@@ -131,7 +128,7 @@ impl Debugger {
             let (next_pc, o) = c.regs.pc.overflowing_add(instr_size as u16);
             if o {
                 // overlap
-                debug_out_text(&"ERROR, overlapping detected!");
+                println!("ERROR, overlapping detected!");
                 res = false;
                 break;
             }
@@ -194,10 +191,13 @@ impl Debugger {
         };
 
         // read from stdin
-        debug_out_text(&format!("assembling at ${:04x}, <enter> to stop.", addr));
+        println!("assembling at ${:04x}, <enter> to stop.", addr);
 
         // loop
         let mut prev_addr = addr;
+
+        // silence this warning, i really can't understand why it happens....
+        #[allow(unused_assignments)]
         let mut res: bool = true;
         'assembler: loop {
             // read asm
@@ -297,7 +297,7 @@ impl Debugger {
                 mode_id = AddressingModeId::Zpy;
                 operand_s.truncate(operand_s.len() - 2);
             } else {
-                debug_out_text(&"invalid opcode!");
+                println!("invalid opcode!");
                 continue 'assembler;
             }
 
@@ -310,7 +310,7 @@ impl Debugger {
                 None,
             ) {
                 Err(e) => {
-                    debug_out_text(&e);
+                    println!("{}", e);
                     continue 'assembler;
                 }
                 Ok(()) => (),
@@ -320,7 +320,7 @@ impl Debugger {
             let op_byte: u8;
             let _ = match self.find_instruction(&opcode, mode_id) {
                 None => {
-                    debug_out_text(&"invalid opcode!");
+                    println!("invalid opcode!");
                     continue 'assembler;
                 }
                 Some((_, idx)) => op_byte = idx,
@@ -351,7 +351,7 @@ impl Debugger {
                 | AddressingModeId::Ind => {
                     let _ = match u16::from_str_radix(&operand_s[1..], 16) {
                         Err(_) => {
-                            debug_out_text(&"invalid opcode!");
+                            println!("invalid opcode!");
                             continue 'assembler;
                         }
                         Ok(a) => {
@@ -381,7 +381,7 @@ impl Debugger {
                 | AddressingModeId::Xin => {
                     let _ = match u8::from_str_radix(&operand_s[1..], 16) {
                         Err(_) => {
-                            debug_out_text(&"invalid opcode!");
+                            println!("invalid opcode!");
                             continue 'assembler;
                         }
                         Ok(a) => {
@@ -405,7 +405,7 @@ impl Debugger {
             };
             if addr < prev_addr {
                 // overlap detected
-                debug_out_text(&"ERROR, overlapping detected!");
+                println!("ERROR, overlapping detected!");
                 res = false;
                 break 'assembler;
             }

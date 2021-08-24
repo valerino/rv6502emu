@@ -64,6 +64,35 @@ bitflags! {
     }
 }
 
+bitflags! {
+    /**
+     * mask for breakpoint registers conditions.
+     */
+    pub(crate) struct BpMask: u8 {
+        /**
+         * reg A
+         */
+        const A = 0b00000001;
+        /**
+         * reg X
+         *
+         */
+        const X = 0b00000010;
+        /**
+         * reg Y
+         */
+        const Y = 0b00000100;
+        /**
+         * reg S
+         */
+        const S = 0b00001000;
+        /**
+         * reg P
+         */
+        const P = 0b00010000;
+    }
+}
+
 /**
  * represents a breakpoint
  */
@@ -74,6 +103,7 @@ pub(crate) struct Bp {
     pub(super) enabled: bool,
     pub(super) regs: Option<Registers>,
     pub(super) cycles: usize,
+    mask: u8,
 }
 
 impl Bp {
@@ -214,6 +244,7 @@ impl Debugger {
             pc: 0,
         };
         let mut target_cycles: usize = 0;
+        let mut target_mask = BpMask::from_bits(0).unwrap();
         loop {
             // get entry
             let item = itt.next().unwrap_or_default().to_ascii_lowercase();
@@ -229,31 +260,57 @@ impl Debugger {
             }
             match arr[0] {
                 "a" => {
-                    target_regs.a = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
-                        .unwrap_or_default();
+                    let _ = match u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16) {
+                        Err(_) => return false,
+                        Ok(a) => {
+                            target_regs.a = a;
+                            target_mask |= BpMask::A;
+                        }
+                    };
                 }
                 "x" => {
-                    target_regs.x = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
-                        .unwrap_or_default();
+                    let _ = match u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16) {
+                        Err(_) => return false,
+                        Ok(x) => {
+                            target_regs.x = x;
+                            target_mask |= BpMask::X;
+                        }
+                    };
                 }
                 "y" => {
-                    target_regs.y = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
-                        .unwrap_or_default();
+                    let _ = match u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16) {
+                        Err(_) => return false,
+                        Ok(y) => {
+                            target_regs.y = y;
+                            target_mask |= BpMask::Y;
+                        }
+                    };
                 }
                 "s" => {
-                    target_regs.s = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
-                        .unwrap_or_default();
+                    let _ = match u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16) {
+                        Err(_) => return false,
+                        Ok(s) => {
+                            target_regs.s = s;
+                            target_mask |= BpMask::S;
+                        }
+                    };
                 }
                 "p" => {
-                    target_regs.p = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
-                        .unwrap_or_default();
-                }
-                "pc" => {
-                    target_regs.pc = u16::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
-                        .unwrap_or_default();
+                    let _ = match u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16) {
+                        Err(_) => return false,
+                        Ok(p) => {
+                            target_regs.p = p;
+                            target_mask |= BpMask::P;
+                        }
+                    };
                 }
                 "cycles" => {
-                    target_cycles = usize::from_str_radix(&arr[1], 10).unwrap_or_default();
+                    let _ = match usize::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 10) {
+                        Err(_) => return false,
+                        Ok(cycles) => {
+                            target_cycles = cycles;
+                        }
+                    };
                 }
                 _ => {
                     // invalid
@@ -271,6 +328,7 @@ impl Debugger {
 
         // return the filled bp struct
         bp.regs = Some(target_regs);
+        bp.mask = target_mask.bits();
         bp.cycles = target_cycles;
         return true;
     }
@@ -342,7 +400,7 @@ impl Debugger {
                 None,
             ) {
                 Err(e) => {
-                    debug_out_text(&e);
+                    println!("{}", e);
                     return false;
                 }
                 Ok(_) => (),
@@ -352,7 +410,7 @@ impl Debugger {
         // add breakpoint if not already present
         for (_, bp) in self.breakpoints.iter().enumerate() {
             if bp.address == addr && ((bp.t & t.bits()) != 0) {
-                debug_out_text(&"breakpoint already set!");
+                println!("breakpoint already set!");
                 return false;
             }
         }
@@ -363,6 +421,7 @@ impl Debugger {
             enabled: true,
             regs: None,
             cycles: 0,
+            mask: 0,
         };
 
         // check if we have conditions
@@ -377,7 +436,7 @@ impl Debugger {
             }
         }
 
-        debug_out_text(&format!("breakpoint set! ({})", bp));
+        println!("breakpoint set! ({})", bp);
         self.breakpoints.push(bp);
         return true;
     }
@@ -392,27 +451,70 @@ impl Debugger {
         t: BreakpointType,
     ) -> Option<i8> {
         for (i, bp) in self.breakpoints.iter().enumerate() {
-            if (bp.address == addr || bp.cycles != 0 && bp.cycles == c.cycles)
-                && bp.enabled
-                && ((bp.t & t.bits()) != 0)
-            {
-                // check conditions too
-                if bp.regs.is_some() {
-                    let checks = bp.regs.as_ref().unwrap();
-                    if checks.a == c.regs.a
-                        || checks.x == c.regs.x
-                        || checks.y == c.regs.y
-                        || checks.s == c.regs.s
-                        || checks.p == c.regs.p
-                        || checks.a == c.regs.a
-                        || checks.pc == c.regs.pc
-                    {
-                        // triggered with registers conditions
-                        return Some(i as i8);
-                    }
-                } else {
+            let mut do_break: bool = false;
+            if !bp.enabled || (bp.t & t.bits()) == 0 {
+                // next bp
+                continue;
+            }
+
+            // check cycles
+            if bp.cycles != 0 {
+                if c.cycles == bp.cycles {
+                    do_break = true;
+                }
+            } else {
+                // either, check the address
+                if bp.address == addr {
+                    do_break = true;
+                }
+            }
+
+            // check no conditions
+            if bp.mask == 0 {
+                if do_break {
                     return Some(i as i8);
                 }
+                continue;
+            }
+
+            // check conditions
+            let mask = BpMask::from_bits(bp.mask).unwrap();
+            if bp.regs.is_some() && do_break {
+                let checks = bp.regs.as_ref().unwrap();
+                if mask.contains(BpMask::A) {
+                    do_break = checks.a == c.regs.a;
+                    if !do_break {
+                        continue;
+                    }
+                }
+                if mask.contains(BpMask::X) {
+                    do_break = checks.x == c.regs.x;
+                    if !do_break {
+                        continue;
+                    }
+                }
+                if mask.contains(BpMask::Y) {
+                    do_break = checks.y == c.regs.y;
+                    if !do_break {
+                        continue;
+                    }
+                }
+                if mask.contains(BpMask::S) {
+                    do_break = checks.s == c.regs.s;
+                    if !do_break {
+                        continue;
+                    }
+                }
+                if mask.contains(BpMask::P) {
+                    do_break = checks.p == c.regs.p;
+                    if !do_break {
+                        continue;
+                    }
+                }
+            }
+
+            if do_break {
+                return Some(i as i8);
             }
         }
         None
@@ -424,14 +526,14 @@ impl Debugger {
     pub(super) fn cmd_show_breakpoints(&self) -> bool {
         let l = self.breakpoints.len();
         if l == 0 {
-            debug_out_text(&"no breakpoints set.");
+            println!("no breakpoints set.");
             return false;
         }
 
         // walk
-        debug_out_text(&format!("listing {} breakpoints\n", l));
+        println!("listing {} breakpoints\n", l);
         for (i, bp) in self.breakpoints.iter().enumerate() {
-            debug_out_text(&format!("{}... {}", i, bp));
+            println!("{}... {}", i, bp);
         }
         return true;
     }
@@ -470,7 +572,7 @@ impl Debugger {
                 self.breakpoints.remove(n as usize);
                 action = "deleted";
             }
-            debug_out_text(&format!("breakpoint {} has been {}.", n, action));
+            println!("breakpoint {} has been {}.", n, action);
         } else {
             // invalid size
             self.cmd_invalid();
@@ -484,7 +586,7 @@ impl Debugger {
      */
     pub(super) fn cmd_clear_breakpoints(&mut self) -> bool {
         // ask first
-        debug_out_text(&"delete all breakpoints ? (y/n)");
+        print!("delete all breakpoints ? (y/n) > ");
         io::stdout().flush().unwrap();
         let mut full_string = String::new();
         let _ = match io::stdin().lock().read_line(&mut full_string) {
@@ -493,7 +595,7 @@ impl Debugger {
         };
         if full_string.trim().eq_ignore_ascii_case("y") {
             self.breakpoints.clear();
-            debug_out_text(&"breakpoints cleared.");
+            println!("breakpoints cleared.");
             return true;
         }
         return false;

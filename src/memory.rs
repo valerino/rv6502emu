@@ -172,6 +172,7 @@ impl Memory for DefaultMemory {
         // read in memory at the given offset
         let m = self.cur.get_mut();
         m.splice(address..address + l as usize, tmp);
+        println!("correctly loaded {} at ${:04x}.", path, address);
         Ok(())
     }
 }

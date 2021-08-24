@@ -76,7 +76,7 @@ impl Debugger {
      * report invalid command
      */
     fn cmd_invalid(&self) {
-        debug_out_text(&"invalid command, try 'h' for help !");
+        println!("invalid command, try 'h' for help !");
     }
 
     /**
@@ -87,10 +87,10 @@ impl Debugger {
         if s.len() > 0 {
             // use provided address
             let addr = u16::from_str_radix(&s[is_dollar_hex(&s)..], 16).unwrap_or_default();
-            debug_out_text(&format!("cpu reset, restarting at PC=${:04x}.", addr));
+            println!("cpu reset, restarting at PC=${:04x}.", addr);
             let _ = match c.reset(Some(addr)) {
                 Err(e) => {
-                    debug_out_text(&e);
+                    println!("{}", e);
                     return false;
                 }
                 Ok(()) => (),
@@ -99,10 +99,10 @@ impl Debugger {
         }
 
         // use the reset vector as default
-        debug_out_text(&"cpu reset, restarting at RESET vector.");
+        println!("cpu reset, restarting at RESET vector.");
         let _ = match c.reset(None) {
             Err(e) => {
-                debug_out_text(&e);
+                println!("{}", e);
                 return false;
             }
             Ok(()) => (),
@@ -145,18 +145,14 @@ impl Debugger {
             None,
         ) {
             Err(e) => {
-                debug_out_text(&e);
+                println!("{}", e);
                 return false;
             }
             Ok(()) => (),
         };
 
         // write all items starting at address (may overlap)
-        debug_out_text(&format!(
-            "writing {} bytes starting at {}.\n",
-            l - 1,
-            addr_s
-        ));
+        println!("writing {} bytes starting at {}.\n", l - 1, addr_s);
         for (i, item) in col.iter().enumerate() {
             if i == (l - 1) {
                 break;
@@ -173,11 +169,11 @@ impl Debugger {
             };
             let _ = match c.bus.get_memory().write_byte(addr as usize, b) {
                 Err(e) => {
-                    debug_out_text(&e);
+                    println!("{}", e);
                     return false;
                 }
                 Ok(_) => {
-                    debug_out_text(&format!("written {} at ${:04x}.", item, addr));
+                    println!("written {} at ${:04x}.", item, addr);
                 }
             };
 
@@ -234,7 +230,7 @@ impl Debugger {
             None,
         ) {
             Err(e) => {
-                debug_out_text(&e);
+                println!("{}", e);
                 return false;
             }
             Ok(()) => (),
@@ -249,17 +245,17 @@ impl Debugger {
             let _ = match File::create(file_path) {
                 Err(e) => {
                     // error
-                    debug_out_text(&e);
+                    println!("{}", e);
                     return false;
                 }
                 Ok(mut f) => {
                     let _ = match f.write_all(m_slice) {
                         Err(e) => {
                             // error
-                            debug_out_text(&e);
+                            println!("{}", e);
                             return false;
                         }
-                        Ok(_) => debug_out_text(&"file saved!"),
+                        Ok(_) => println!("file saved!"),
                     };
                 }
             };
@@ -267,12 +263,12 @@ impl Debugger {
             // dump hex
             let mut sl = vec![0; m_slice.len()];
             sl.copy_from_slice(&m_slice);
-            debug_out_text(&format!("dumping {} bytes at ${:04x}\n", num_bytes, addr));
+            println!("dumping {} bytes at ${:04x}\n", num_bytes, addr);
             let dump = HexViewBuilder::new(&sl)
                 .address_offset(addr as usize)
                 .row_width(16)
                 .finish();
-            debug_out_text(&dump);
+            println!("{}", dump);
         }
         return true;
     }
@@ -308,13 +304,10 @@ impl Debugger {
         // and load
         match mem.load(file_path, addr as usize) {
             Err(e) => {
-                debug_out_text(&e);
+                println!("{}", e);
                 return false;
             }
-            Ok(()) => debug_out_text(&format!(
-                "{} correctly loaded at ${:04x} !",
-                file_path, addr
-            )),
+            Ok(()) => println!("{} correctly loaded at ${:04x} !", file_path, addr),
         };
         return true;
     }
@@ -325,7 +318,7 @@ impl Debugger {
     fn cmd_show_help(&self) -> bool {
         println!("debugger supported commands:");
         println!("\ta <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.");
-        println!("\tbx|br|bw|brw|bn|bq [$address] [c,...] . add exec/read/write/readwrite/execute/nmi/irq breakpoint, [c]onditions can be pc|a|x|y|s|p|cycles=n|$n.\n\tnote: for anything except bn and bq, [$address] is mandatory !",
+        println!("\tbx|br|bw|brw|bn|bq [$address] [c,...] . add exec/read/write/readwrite/execute/nmi/irq breakpoint, [c]onditions can be <a|x|y|s|p>|<cycles>=n|$n.\n\tnote: for anything except bn and bq, [$address] is mandatory !",
         );
         println!("\tbl .................................... show breakpoints.");
         println!("\tbe <n> ................................ enable breakpoint <n>.");
@@ -340,11 +333,12 @@ impl Debugger {
     );
         println!("\th ..................................... this help.");
         println!("\tl <$address> <path> ................... load <path> at <$address>.",);
+        println!("\tlg .................................... enable/disable cpu log to console (warning, slows down a lot!).",);
         println!("\tq ..................................... exit emulator.");
         println!("\tr ..................................... show registers.");
         println!("\tp ..................................... step next instruction.");
         println!(
-            "\to ..................................... enable/disabling show registers before the opcode, default is off."
+            "\to ..................................... enable/disable show registers before the opcode, default is off (needs logging enabled)."
         );
         println!("\ts <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.",
         );
@@ -405,7 +399,7 @@ impl Debugger {
                 return false;
             }
         }
-        debug_out_text(&format!("register '{}' set to {}.", reg, val));
+        println!("register '{}' set to {}.", reg, val);
         return true;
     }
 
@@ -488,9 +482,20 @@ impl Debugger {
             "l" => {
                 return (String::from("*"), self.cmd_load_memory(c, it));
             }
+            // enable/disable logging
+            "lg" => {
+                if log_enabled() {
+                    c.enable_logging(false);
+                    println!("logging is disabled!");
+                } else {
+                    c.enable_logging(true);
+                    println!("logging is enabled!");
+                }
+                return (String::from("*"), true);
+            }
             // quit
             "q" => {
-                debug_out_text(&"quit!");
+                println!("quit!");
                 return (String::from("q"), true);
             }
             // show registers
@@ -505,14 +510,14 @@ impl Debugger {
             // show/hide registers before showing the opcode
             "o" => {
                 self.show_registers_before_opcode = !self.show_registers_before_opcode;
-                debug_out_text(&format!(
+                println!(
                     "{}showing registers before the opcode.",
                     if self.show_registers_before_opcode {
                         ""
                     } else {
                         "not "
                     }
-                ));
+                );
                 return (String::from("*"), true);
             }
             // save memory

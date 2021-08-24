@@ -32,7 +32,6 @@ use crate::cpu::addressing_modes::AddressingMode;
 use crate::cpu::cpu_error::CpuError;
 use crate::cpu::Cpu;
 use log::*;
-use std::fmt::Display;
 
 /**
  * simply check bit 7 for signed/unsigned byte
@@ -42,21 +41,6 @@ pub(crate) fn is_signed(n: u8) -> bool {
         return false;
     }
     true
-}
-
-/**
- * display opcode string, currently implemented to stdout
- */
-pub(crate) fn debug_out_opcode<A: AddressingMode>(
-    c: &mut Cpu,
-    opcode_name: &str,
-) -> Result<(), CpuError> {
-    if log::log_enabled!(Level::max()) {
-        let opc_string = A::repr(c, opcode_name)?;
-        //debug!("\t{}", opc_string);
-        println!("\t{}", opc_string);
-    }
-    Ok(())
 }
 
 /**
@@ -70,21 +54,46 @@ pub(crate) fn is_dollar_hex(v: &str) -> usize {
 }
 
 /**
+ * activate logging on stdout through env_logger (max level).
+ */
+pub(crate) fn enable_logging_internal(enable: bool) {
+    if enable == true {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::max())
+            .try_init();
+        log::set_max_level(log::LevelFilter::max());
+    } else {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Off)
+            .try_init();
+        log::set_max_level(log::LevelFilter::Off);
+    }
+}
+
+/**
+ * check if log is enabled
+ */
+pub(crate) fn log_enabled() -> bool {
+    log::max_level() == Level::max()
+}
+
+/**
  * display opcode string, currently implemented to stdout
  */
-pub(crate) fn debug_out_text(d: &dyn Display) {
-    if log::log_enabled!(Level::max()) {
-        //debug!("{}", s);
-        println!("{}", d);
+pub(crate) fn debug_out_opcode<A: AddressingMode>(
+    c: &mut Cpu,
+    opcode_name: &str,
+) -> Result<(), CpuError> {
+    if log_enabled() {
+        let opc_string = A::repr(c, opcode_name)?;
+        println!("\t{}", opc_string);
     }
+    Ok(())
 }
 
 /**
  * display registers and cycles, currently implemented to stdout
  */
 pub(crate) fn debug_out_registers(c: &Cpu) {
-    if log::log_enabled!(Level::max()) {
-        //debug!("{}", self.regs);
-        println!("\t{}, cycles={}", c.regs, c.cycles);
-    }
+    println!("\t{}, cycles={}", c.regs, c.cycles);
 }
