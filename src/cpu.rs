@@ -45,7 +45,7 @@ use cpu_error::{CpuError, CpuErrorType};
 /**
  * the cpu registers.
  */
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Registers {
     pub a: u8,
     pub x: u8,
@@ -464,6 +464,7 @@ impl Cpu {
                 // check if we have an exec breakpoint at pc
                 if self.debug {
                     match dbg.has_enabled_breakpoint(
+                        self,
                         self.regs.pc,
                         BreakpointType::EXEC | BreakpointType::NMI | BreakpointType::IRQ,
                     ) {
@@ -589,6 +590,10 @@ impl Cpu {
         // set pc to address contained at vector
         let addr = self.bus.get_memory().read_word_le(v as usize)?;
 
+        // check for deadlock
+        if addr == self.regs.pc {
+            return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+        }
         self.regs.pc = addr;
         Ok(())
     }

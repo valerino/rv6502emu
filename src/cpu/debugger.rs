@@ -325,7 +325,7 @@ impl Debugger {
     fn cmd_show_help(&self) -> bool {
         println!("debugger supported commands:");
         println!("\ta <$address> .......................... assemble instructions (one per line) at <$address>, <enter> to finish.");
-        println!("\tbx|br|bw|brw|bn|bq [$address].......... add exec/read/write/readwrite/execute/nmi/irq breakpoint. for anything except bn and bq, [$address] is mandatory.",
+        println!("\tbx|br|bw|brw|bn|bq [$address] [c,...] . add exec/read/write/readwrite/execute/nmi/irq breakpoint, [c]onditions can be pc|a|x|y|s|p|cycles=n|$n.\n\tnote: for anything except bn and bq, [$address] is mandatory !",
         );
         println!("\tbl .................................... show breakpoints.");
         println!("\tbe <n> ................................ enable breakpoint <n>.");

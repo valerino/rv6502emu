@@ -95,7 +95,7 @@ pub(crate) trait AddressingMode {
         // check if a breakpoint has to be triggered
         if d.is_some() {
             d.unwrap()
-                .handle_rw_breakpoint(address, BreakpointType::READ)?
+                .handle_rw_breakpoint(c, address, BreakpointType::READ)?
         }
 
         // call callback if any
@@ -115,7 +115,7 @@ pub(crate) trait AddressingMode {
         // check if a breakpoint has to be triggered
         if d.is_some() {
             d.unwrap()
-                .handle_rw_breakpoint(address, BreakpointType::WRITE)?
+                .handle_rw_breakpoint(c, address, BreakpointType::WRITE)?
         }
 
         // call callback if any

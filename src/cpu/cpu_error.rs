@@ -46,6 +46,8 @@ pub enum CpuErrorType {
     InvalidOpcode,
     /// read/write breakpoint hit.
     RwBreakpoint,
+    /// deadlock.
+    Deadlock,
     /// generic error
     Generic,
 }
@@ -58,6 +60,7 @@ impl std::fmt::Display for CpuErrorType {
             CpuErrorType::MemoryLoad => write!(f, "MemLoad"),
             CpuErrorType::InvalidOpcode => write!(f, "InvalidOpcode"),
             CpuErrorType::RwBreakpoint => write!(f, "RwBreakpoint"),
+            CpuErrorType::Deadlock => write!(f, "Deadlock"),
             CpuErrorType::Generic => write!(f, "Generic"),
         }
     }
@@ -93,7 +96,7 @@ impl std::fmt::Display for CpuError {
             CpuErrorType::InvalidOpcode => {
                 write!(f, "Error ({})", self.t,)
             }
-            CpuErrorType::Generic => {
+            CpuErrorType::Generic | CpuErrorType::Deadlock => {
                 write!(
                     f,
                     "Error ({}) {}",

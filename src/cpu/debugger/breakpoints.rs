@@ -32,13 +32,14 @@ use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuErrorType;
 use crate::cpu::debugger::Debugger;
 use crate::cpu::CpuError;
-use crate::cpu::{Cpu, Vectors};
+use crate::cpu::{Cpu, Registers, Vectors};
 use crate::utils::*;
 use bitflags::bitflags;
 use std::fmt::Display;
 use std::fmt::{Error, Formatter};
 use std::io;
 use std::io::{BufRead, Write};
+use std::str::Split;
 use std::str::SplitWhitespace;
 
 bitflags! {
@@ -71,6 +72,8 @@ pub(crate) struct Bp {
     pub(super) address: u16,
     pub(super) t: u8,
     pub(super) enabled: bool,
+    pub(super) regs: Option<Registers>,
+    pub(super) cycles: usize,
 }
 
 impl Bp {
@@ -112,22 +115,55 @@ impl Bp {
 impl Display for Bp {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         if self.t == BreakpointType::NMI.bits() || self.t == BreakpointType::IRQ.bits() {
-            write!(
-                f,
-                "[{},{}]",
-                self.flags_to_string(),
-                if self.enabled { "enabled" } else { "disabled" }
-            )
-            .expect("");
+            if self.regs.is_some() {
+                write!(
+                    f,
+                    "[{},{}], conditions: {}{}",
+                    self.flags_to_string(),
+                    if self.enabled { "enabled" } else { "disabled" },
+                    self.regs.as_ref().unwrap(),
+                    if self.cycles != 0 {
+                        format!(", cycles={}", self.cycles)
+                    } else {
+                        "".to_string()
+                    },
+                )
+                .expect("");
+            } else {
+                write!(
+                    f,
+                    "[{},{}]",
+                    self.flags_to_string(),
+                    if self.enabled { "enabled" } else { "disabled" }
+                )
+                .expect("");
+            }
         } else {
-            write!(
-                f,
-                "${:04x} [{},{}]",
-                self.address,
-                self.flags_to_string(),
-                if self.enabled { "enabled" } else { "disabled" }
-            )
-            .expect("");
+            if self.regs.is_some() {
+                write!(
+                    f,
+                    "${:04x} [{},{}], conditions: {}{}",
+                    self.address,
+                    self.flags_to_string(),
+                    if self.enabled { "enabled" } else { "disabled" },
+                    self.regs.as_ref().unwrap(),
+                    if self.cycles != 0 {
+                        format!(", cycles={}", self.cycles)
+                    } else {
+                        "".to_string()
+                    },
+                )
+                .expect("");
+            } else {
+                write!(
+                    f,
+                    "${:04x} [{},{}]",
+                    self.address,
+                    self.flags_to_string(),
+                    if self.enabled { "enabled" } else { "disabled" }
+                )
+                .expect("");
+            }
         }
 
         Ok(())
@@ -140,11 +176,12 @@ impl Debugger {
      */
     pub(crate) fn handle_rw_breakpoint(
         &self,
+        c: &Cpu,
         address: u16,
         t: BreakpointType,
     ) -> Result<(), CpuError> {
         // check if a breakpoint has to be triggered
-        match self.has_enabled_breakpoint(address, t) {
+        match self.has_enabled_breakpoint(c, address, t) {
             Some(idx) => {
                 // trigger!
                 let e = CpuError {
@@ -161,6 +198,81 @@ impl Debugger {
         };
 
         Ok(())
+    }
+
+    /**
+     * split a string like "a=$10,x=$20,cycles=1234,..." and build a breakpoint with conditions
+     */
+    fn bp_from_conditions<'a>(&mut self, itt: &mut Split<'a, char>, bp: &mut Bp) -> bool {
+        let mut count = 0;
+        let mut target_regs = Registers {
+            a: 0,
+            x: 0,
+            y: 0,
+            s: 0,
+            p: 0,
+            pc: 0,
+        };
+        let mut target_cycles: usize = 0;
+        loop {
+            // get entry
+            let item = itt.next().unwrap_or_default().to_ascii_lowercase();
+            if item.len() == 0 {
+                break;
+            }
+
+            // split with "="
+            let arr: Vec<&str> = item.split('=').collect();
+            if arr.len() != 2 {
+                // wrong condition
+                return false;
+            }
+            match arr[0] {
+                "a" => {
+                    target_regs.a = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
+                        .unwrap_or_default();
+                }
+                "x" => {
+                    target_regs.x = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
+                        .unwrap_or_default();
+                }
+                "y" => {
+                    target_regs.y = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
+                        .unwrap_or_default();
+                }
+                "s" => {
+                    target_regs.s = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
+                        .unwrap_or_default();
+                }
+                "p" => {
+                    target_regs.p = u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
+                        .unwrap_or_default();
+                }
+                "pc" => {
+                    target_regs.pc = u16::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16)
+                        .unwrap_or_default();
+                }
+                "cycles" => {
+                    target_cycles = usize::from_str_radix(&arr[1], 10).unwrap_or_default();
+                }
+                _ => {
+                    // invalid
+                    return false;
+                }
+            }
+
+            // next item
+            count += 1;
+        }
+        if count == 0 {
+            // invalid, no items
+            return false;
+        }
+
+        // return the filled bp struct
+        bp.regs = Some(target_regs);
+        bp.cycles = target_cycles;
+        return true;
     }
 
     /**
@@ -244,22 +356,63 @@ impl Debugger {
                 return false;
             }
         }
-        self.breakpoints.push(Bp {
+
+        let mut bp = Bp {
             address: addr,
             t: t.bits(),
             enabled: true,
-        });
-        debug_out_text(&"breakpoint set!");
+            regs: None,
+            cycles: 0,
+        };
+
+        // check if we have conditions
+        let conditions = it.next().unwrap_or_default();
+        if !conditions.is_empty() {
+            // split commas and build proper bp struct
+            let mut itt = conditions.split(',');
+            if !self.bp_from_conditions(&mut itt, &mut bp) {
+                // invalid command
+                self.cmd_invalid();
+                return false;
+            }
+        }
+
+        debug_out_text(&format!("breakpoint set! ({})", bp));
+        self.breakpoints.push(bp);
         return true;
     }
 
     /**
      * check if there's a breakpoint at the given address and it's enabled, and return its index.
      */
-    pub(crate) fn has_enabled_breakpoint(&self, addr: u16, t: BreakpointType) -> Option<i8> {
+    pub(crate) fn has_enabled_breakpoint(
+        &self,
+        c: &Cpu,
+        addr: u16,
+        t: BreakpointType,
+    ) -> Option<i8> {
         for (i, bp) in self.breakpoints.iter().enumerate() {
-            if bp.address == addr && bp.enabled && ((bp.t & t.bits()) != 0) {
-                return Some(i as i8);
+            if (bp.address == addr || bp.cycles != 0 && bp.cycles == c.cycles)
+                && bp.enabled
+                && ((bp.t & t.bits()) != 0)
+            {
+                // check conditions too
+                if bp.regs.is_some() {
+                    let checks = bp.regs.as_ref().unwrap();
+                    if checks.a == c.regs.a
+                        || checks.x == c.regs.x
+                        || checks.y == c.regs.y
+                        || checks.s == c.regs.s
+                        || checks.p == c.regs.p
+                        || checks.a == c.regs.a
+                        || checks.pc == c.regs.pc
+                    {
+                        // triggered with registers conditions
+                        return Some(i as i8);
+                    }
+                } else {
+                    return Some(i as i8);
+                }
             }
         }
         None

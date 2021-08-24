@@ -192,7 +192,7 @@ pub(super) fn push_byte(c: &mut Cpu, d: Option<&Debugger>, b: u8) -> Result<(), 
     // handle breakpoint
     if d.is_some() {
         d.unwrap()
-            .handle_rw_breakpoint(addr as u16, BreakpointType::WRITE)?
+            .handle_rw_breakpoint(c, addr as u16, BreakpointType::WRITE)?
     }
 
     // call callback if any
@@ -212,7 +212,7 @@ fn pop_byte(c: &mut Cpu, d: Option<&Debugger>) -> Result<u8, CpuError> {
     // handle breakpoint
     if d.is_some() {
         d.unwrap()
-            .handle_rw_breakpoint(addr as u16, BreakpointType::READ)?
+            .handle_rw_breakpoint(c, addr as u16, BreakpointType::READ)?
     }
 
     // call callback if any
@@ -233,7 +233,7 @@ fn pop_word_le(c: &mut Cpu, d: Option<&Debugger>) -> Result<u16, CpuError> {
     // handle breakpoint
     if d.is_some() {
         d.unwrap()
-            .handle_rw_breakpoint(addr as u16, BreakpointType::READ)?
+            .handle_rw_breakpoint(c, addr as u16, BreakpointType::READ)?
     }
 
     // call callback if any
@@ -254,7 +254,7 @@ pub(super) fn push_word_le(c: &mut Cpu, d: Option<&Debugger>, w: u16) -> Result<
     // handle breakpoint
     if d.is_some() {
         d.unwrap()
-            .handle_rw_breakpoint(addr as u16, BreakpointType::WRITE)?
+            .handle_rw_breakpoint(c, addr as u16, BreakpointType::WRITE)?
     }
 
     // call callback if any
@@ -319,7 +319,7 @@ fn adc<A: AddressingMode>(
                 .wrapping_add((b as u16) & 0x0f)
                 .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
             if sum >= 10 {
-                sum = (sum.wrapping_sub(10)) | 10;
+                sum = (sum.wrapping_sub(10)) | 0x10;
                 sum = sum
                     .wrapping_add((c.regs.a as u16) & 0xf0)
                     .wrapping_add((b as u16) & 0xf0);
@@ -340,6 +340,37 @@ fn adc<A: AddressingMode>(
         c.set_cpu_flags(CpuFlags::V, o != 0);
         c.regs.a = (sum & 0xff) as u8;
         set_zn_flags(c, c.regs.a);
+
+        /*
+        let aa = c.regs.a as u16;
+        let bb = b as u16;
+        let is_carry = c.is_cpu_flag_set(CpuFlags::C) as u16;
+        let mut wd = aa.wrapping_add(bb).wrapping_add(is_carry);
+        if c.is_cpu_flag_set(CpuFlags::D) {
+            // handle decimal mode
+            if ((aa & 0xf).wrapping_add(bb & 0xF).wrapping_add(is_carry)) > 9 {
+                wd = wd.wrapping_add(6);
+            }
+            c.set_cpu_flags(CpuFlags::N, (wd & 0x80) != 0);
+
+            let overflow =
+                !(((aa ^ bb) & 0x80) != 0) as bool && ((((aa ^ wd) & 0x80) != 0) as bool);
+            c.set_cpu_flags(CpuFlags::V, overflow);
+            if wd > 0x99 {
+                wd = wd.wrapping_add(0x60);
+            }
+            c.set_cpu_flags(CpuFlags::C, wd > 0x99);
+        } else {
+            // binary
+            c.set_cpu_flags(CpuFlags::C, wd > 0xff);
+            c.set_cpu_flags(CpuFlags::Z, (wd & 0xff) == 0);
+            c.set_cpu_flags(CpuFlags::N, (wd & 0x80) != 0);
+            let overflow =
+                !(((aa ^ bb) & 0x80) != 0) as bool && ((((aa ^ wd) & 0x80) != 0) as bool);
+            c.set_cpu_flags(CpuFlags::V, overflow);
+        }
+        c.regs.a = (wd & 0xff) as u8;
+        */
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -920,6 +951,12 @@ fn bmi<A: AddressingMode>(
             cycles += 1;
             taken = true;
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            }
+
             c.regs.pc = new_pc;
         }
     }
@@ -973,6 +1010,11 @@ fn bne<A: AddressingMode>(
             cycles += 1;
             taken = true;
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            }
             c.regs.pc = new_pc;
         }
     }
@@ -1025,6 +1067,10 @@ fn bpl<A: AddressingMode>(
             cycles += 1;
             taken = true;
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            }
             c.regs.pc = new_pc;
         }
     }
@@ -1080,6 +1126,11 @@ fn brk<A: AddressingMode>(
 
         // set pc to address contained at irq vector
         let addr = c.bus.get_memory().read_word_le(Vectors::IRQ as usize)?;
+
+        // check for deadlock
+        if addr == c.regs.pc {
+            return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+        }
         c.regs.pc = addr;
     }
     Ok((
@@ -1133,6 +1184,10 @@ fn bvc<A: AddressingMode>(
             cycles += 1;
             taken = true;
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            }
             c.regs.pc = new_pc;
         }
     }
@@ -1187,6 +1242,10 @@ fn bvs<A: AddressingMode>(
             cycles += 1;
             taken = true;
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            }
             c.regs.pc = new_pc;
         }
     }
@@ -1927,6 +1986,10 @@ fn jmp<A: AddressingMode>(
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
+        // check for deadlock
+        if tgt == c.regs.pc {
+            return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+        }
         // set pc
         c.regs.pc = tgt;
     }
@@ -1976,6 +2039,10 @@ fn jsr<A: AddressingMode>(
             c.regs.pc.wrapping_add(A::len() as u16).wrapping_sub(1),
         )?;
 
+        // check for deadlock
+        if tgt == c.regs.pc {
+            return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+        }
         // set pc
         c.regs.pc = tgt;
     }
@@ -2968,6 +3035,8 @@ fn sbc<A: AddressingMode>(
             .wrapping_sub(b as u16)
             .wrapping_sub(1)
             .wrapping_add(c.is_cpu_flag_set(CpuFlags::C) as u16);
+        let o = ((c.regs.a as u16) ^ sub) & ((b as u16) ^ sub) & 0x80;
+        c.set_cpu_flags(CpuFlags::V, o != 0);
 
         if c.is_cpu_flag_set(CpuFlags::D) {
             // bcd
@@ -2983,18 +3052,35 @@ fn sbc<A: AddressingMode>(
             if hi & 0x10 != 0 {
                 hi = hi.wrapping_sub(6);
             }
-            c.regs.a = (hi << 4) | (lo & 0x0f);
+            c.regs.a = (hi << 4) | (lo & 0xf);
         } else {
             // normal
             c.regs.a = (sub & 0xff) as u8;
         }
+        /*
 
-        // set flags
-        c.set_cpu_flags(CpuFlags::C, sub < 0x100);
-        let o = ((c.regs.a as u16) ^ sub) & ((b as u16) ^ sub) & 0x80;
-        c.set_cpu_flags(CpuFlags::V, o != 0);
-        c.set_cpu_flags(CpuFlags::Z, c.regs.a == 0);
-        c.set_cpu_flags(CpuFlags::N, utils::is_signed(c.regs.a));
+        let aa = c.regs.a as u16;
+        let bb = b as u16;
+        let is_carry = c.is_cpu_flag_set(CpuFlags::C) as u16;
+
+        let mut wd = aa.wrapping_sub(bb).wrapping_sub((!is_carry) as u16);
+        c.set_cpu_flags(CpuFlags::Z, (wd & 0xff) == 0);
+        c.set_cpu_flags(CpuFlags::N, ((wd & 0x80) != 0) as bool);
+        let overflow = (((aa ^ bb) & 0x80) != 0) as bool && ((((aa ^ wd) & 0x80) != 0) as bool);
+        c.set_cpu_flags(CpuFlags::V, overflow);
+        if c.is_cpu_flag_set(CpuFlags::D) {
+            // handle decimal mode
+            if (aa & 0xf).wrapping_sub((!is_carry) as u16) < (bb & 0xf) {
+                wd = wd.wrapping_sub(6);
+            }
+
+            if wd > 0x99 {
+                wd = wd.wrapping_sub(0x60);
+            }
+        }
+        c.set_cpu_flags(CpuFlags::C, wd <= 0xff);
+        c.regs.a = (wd & 0xff) as u8;
+        */
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
