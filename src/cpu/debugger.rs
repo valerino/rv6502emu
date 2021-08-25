@@ -31,6 +31,7 @@
 use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuErrorType;
 use crate::cpu::Cpu;
+use crate::cpu::CpuFlags;
 use crate::utils::*;
 use breakpoints::Bp;
 use hexplay::HexViewBuilder;
@@ -389,7 +390,7 @@ impl Debugger {
                             'x' => c.regs.x = a as u8,
                             'y' => c.regs.y = a as u8,
                             's' => c.regs.s = a as u8,
-                            'p' => c.regs.p = a as u8,
+                            'p' => c.regs.p = CpuFlags::from_bits(a as u8).unwrap(),
                             _ => (),
                         }
                     }

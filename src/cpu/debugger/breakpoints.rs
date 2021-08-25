@@ -32,6 +32,7 @@ use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuErrorType;
 use crate::cpu::debugger::Debugger;
 use crate::cpu::CpuError;
+use crate::cpu::CpuFlags;
 use crate::cpu::{Cpu, Registers, Vectors};
 use crate::utils::*;
 use bitflags::bitflags;
@@ -240,7 +241,7 @@ impl Debugger {
             x: 0,
             y: 0,
             s: 0,
-            p: 0,
+            p: CpuFlags::from_bits(0).unwrap(),
             pc: 0,
         };
         let mut target_cycles: usize = 0;
@@ -299,7 +300,7 @@ impl Debugger {
                     let _ = match u8::from_str_radix(&arr[1][is_dollar_hex(&arr[1])..], 16) {
                         Err(_) => return false,
                         Ok(p) => {
-                            target_regs.p = p;
+                            target_regs.p = CpuFlags::from_bits(p).unwrap();
                             target_mask |= BpMask::P;
                         }
                     };

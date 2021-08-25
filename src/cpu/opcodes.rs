@@ -1120,7 +1120,7 @@ fn brk<A: AddressingMode>(
 
         // push P with U and B set
         // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
-        let mut flags = CpuFlags::from_bits(c.regs.p).unwrap();
+        let mut flags = c.regs.p.clone();
         flags.set(CpuFlags::B, true);
         flags.set(CpuFlags::U, true);
         push_byte(c, d, flags.bits())?;
@@ -2585,7 +2585,7 @@ fn php<A: AddressingMode>(
     }
     if !decode_only {
         // ensure B and U(ndefined) are set to 1
-        let mut flags = CpuFlags::from_bits(c.regs.p).unwrap();
+        let mut flags = c.regs.p.clone();
         flags.set(CpuFlags::U, true);
         flags.set(CpuFlags::B, true);
         push_byte(c, d, flags.bits())?;
@@ -2665,7 +2665,8 @@ fn plp<A: AddressingMode>(
     }
 
     if !decode_only {
-        c.regs.p = pop_byte(c, d)?;
+        let popped_flags = pop_byte(c, d)?;
+        c.regs.p = CpuFlags::from_bits(popped_flags).unwrap();
 
         // ensure flag Unused is set and B is unset
         c.set_cpu_flags(CpuFlags::B, false);
@@ -2933,7 +2934,8 @@ fn rti<A: AddressingMode>(
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
-        c.regs.p = pop_byte(c, d)?;
+        let popped_flags = pop_byte(c, d)?;
+        c.regs.p = CpuFlags::from_bits(popped_flags).unwrap();
 
         // ensure flag Unused is set and B is unset
         c.set_cpu_flags(CpuFlags::B, false);

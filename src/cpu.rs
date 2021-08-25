@@ -50,7 +50,7 @@ pub struct Registers {
     pub a: u8,
     pub x: u8,
     pub y: u8,
-    pub p: u8,
+    pub p: CpuFlags,
     pub s: u8,
     pub pc: u16,
 }
@@ -68,12 +68,23 @@ pub enum CpuOperation {
     Brk,
 }
 
+/**
+ * type of emulated cpu
+ */
+#[derive(Debug, PartialEq)]
+pub enum CpuType {
+    /// default, MOS6502
+    MOS6502,
+    /// WDC 6502C
+    WDC65C02,
+}
+
 bitflags! {
     /**
      * flags (values for the P register).
      * https://www.atarimagazines.com/compute/issue53/047_1_All_About_The_Status_Register.php
      */
-    pub(crate) struct CpuFlags : u8 {
+    pub struct CpuFlags : u8 {
         /**
          * C (bit 0)—Carry flag. Carry is set whenever the accumulator rolls over from $FF to $00.
          */
@@ -180,7 +191,7 @@ impl Registers {
             a: 0,
             x: 0,
             y: 0,
-            p: 0,
+            p: CpuFlags::from_bits(0).unwrap(),
             s: 0,
             pc: 0,
         };
@@ -191,17 +202,48 @@ impl Registers {
      * convert P (flags) register to a meaningful string
      */
     fn flags_to_string(&self) -> String {
-        let p = CpuFlags::from_bits(self.p).unwrap();
         let s = format!(
             "{}{}{}{}{}{}{}{}",
-            if p.contains(CpuFlags::N) { "N" } else { "-" },
-            if p.contains(CpuFlags::V) { "V" } else { "-" },
-            if p.contains(CpuFlags::U) { "U" } else { "-" },
-            if p.contains(CpuFlags::B) { "B" } else { "-" },
-            if p.contains(CpuFlags::D) { "D" } else { "-" },
-            if p.contains(CpuFlags::I) { "I" } else { "-" },
-            if p.contains(CpuFlags::Z) { "Z" } else { "-" },
-            if p.contains(CpuFlags::C) { "C" } else { "-" },
+            if self.p.contains(CpuFlags::N) {
+                "N"
+            } else {
+                "-"
+            },
+            if self.p.contains(CpuFlags::V) {
+                "V"
+            } else {
+                "-"
+            },
+            if self.p.contains(CpuFlags::U) {
+                "U"
+            } else {
+                "-"
+            },
+            if self.p.contains(CpuFlags::B) {
+                "B"
+            } else {
+                "-"
+            },
+            if self.p.contains(CpuFlags::D) {
+                "D"
+            } else {
+                "-"
+            },
+            if self.p.contains(CpuFlags::I) {
+                "I"
+            } else {
+                "-"
+            },
+            if self.p.contains(CpuFlags::Z) {
+                "Z"
+            } else {
+                "-"
+            },
+            if self.p.contains(CpuFlags::C) {
+                "C"
+            } else {
+                "-"
+            },
         );
         s
     }
@@ -246,6 +288,8 @@ pub struct Cpu {
     irq_pending: bool,
     /// to handle interrupt return after RTI in certain situations.
     fix_pc_rti: i8,
+    /// the emulated cpu type, default MOS6502.
+    cpu_type: CpuType,
 }
 
 impl Cpu {
@@ -282,7 +326,7 @@ impl Cpu {
      * check if cpu flag is set
      */
     pub(crate) fn is_cpu_flag_set(&self, f: CpuFlags) -> bool {
-        if CpuFlags::from_bits(self.regs.p).unwrap().contains(f) {
+        if self.regs.p.contains(f) {
             return true;
         }
         false
@@ -292,9 +336,7 @@ impl Cpu {
      * set/unset cpu flag
      */
     pub(crate) fn set_cpu_flags(&mut self, f: CpuFlags, enable: bool) {
-        let mut p = CpuFlags::from_bits(self.regs.p).unwrap();
-        p.set(f, enable);
-        self.regs.p = p.bits();
+        self.regs.p.set(f, enable);
     }
 
     /**
@@ -308,7 +350,11 @@ impl Cpu {
      * - nmi
      * - brk
      */
-    pub fn new(b: Box<dyn Bus>, cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>) -> Cpu {
+    pub fn new(
+        b: Box<dyn Bus>,
+        cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
+        t: Option<CpuType>,
+    ) -> Cpu {
         let c = Cpu {
             regs: Registers::new(),
             cycles: 0,
@@ -320,17 +366,18 @@ impl Cpu {
             must_trigger_nmi: false,
             irq_pending: false,
             fix_pc_rti: 0,
+            cpu_type: t.unwrap_or(CpuType::MOS6502),
         };
         c
     }
 
     /**
-     * creates a new cpu instance, with the given Bus attached, exposing a Memory.
+     * creates a new cpu instance (MOS6502), with the given Bus attached, exposing a Memory.
      */
     pub fn new_default(cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>) -> Cpu {
         let m = super::memory::new_default();
         let b = super::bus::new_default(m);
-        Cpu::new(b, cb)
+        Cpu::new(b, cb, Some(CpuType::MOS6502))
     }
 
     /**
@@ -356,9 +403,8 @@ impl Cpu {
             a: 0,
             x: 0,
             y: 0,
-
             // I (enable interrupts), and the U flag is always set.
-            p: (CpuFlags::U | CpuFlags::I).bits(),
+            p: CpuFlags::U | CpuFlags::I,
             s: 0xff,
 
             // at reset, we read PC from RESET vector
@@ -626,9 +672,9 @@ impl Cpu {
         let dbg = debugger.unwrap_or(&mut empty_dbg);
         // push pc and p on stack
         opcodes::push_word_le(self, Some(dbg), self.regs.pc)?;
-        // push P with U set
+        // always push P with U(ndefined) set
         // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
-        let mut flags = CpuFlags::from_bits(self.regs.p).unwrap();
+        let mut flags = self.regs.p.clone();
         flags.set(CpuFlags::U, true);
         opcodes::push_byte(self, Some(dbg), flags.bits())?;
 
