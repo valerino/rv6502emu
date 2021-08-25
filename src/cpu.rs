@@ -399,11 +399,12 @@ impl Cpu {
         let mut instr_size: i8 = 0;
 
         // construct an empty, disabled, debugger to use when None is passed in
-        if debugger.is_some() {
-            self.debug = true;
-        }
         let mut empty_dbg = Debugger::new(false);
         let dbg = debugger.unwrap_or(&mut empty_dbg);
+        if dbg.enabled {
+            self.debug = true;
+        }
+
         let mut silence_output = false;
         let mut is_error = false;
         let mut opcode_cycles: usize = 0;
