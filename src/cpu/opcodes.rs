@@ -707,6 +707,14 @@ fn bcc<A: AddressingMode>(
             cycles += 1;
             taken = true;
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
+            }
             c.regs.pc = new_pc;
         }
     }
@@ -761,6 +769,14 @@ fn bcs<A: AddressingMode>(
             cycles += 1;
             taken = true;
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
+            }
             c.regs.pc = new_pc;
         }
     }
@@ -815,6 +831,14 @@ fn beq<A: AddressingMode>(
             cycles += 1;
             taken = true;
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
+            }
             c.regs.pc = new_pc;
         }
     }
@@ -922,7 +946,11 @@ fn bmi<A: AddressingMode>(
 
             // check for deadlock
             if new_pc == c.regs.pc {
-                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
             }
 
             c.regs.pc = new_pc;
@@ -981,7 +1009,11 @@ fn bne<A: AddressingMode>(
 
             // check for deadlock
             if new_pc == c.regs.pc {
-                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
             }
             c.regs.pc = new_pc;
         }
@@ -1037,7 +1069,11 @@ fn bpl<A: AddressingMode>(
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
             // check for deadlock
             if new_pc == c.regs.pc {
-                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
             }
             c.regs.pc = new_pc;
         }
@@ -1097,7 +1133,11 @@ fn brk<A: AddressingMode>(
 
         // check for deadlock
         if addr == c.regs.pc {
-            return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            return Err(CpuError::new_default(
+                CpuErrorType::Deadlock,
+                c.regs.pc,
+                None,
+            ));
         }
         c.regs.pc = addr;
     }
@@ -1154,7 +1194,11 @@ fn bvc<A: AddressingMode>(
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
             // check for deadlock
             if new_pc == c.regs.pc {
-                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
             }
             c.regs.pc = new_pc;
         }
@@ -1212,7 +1256,11 @@ fn bvs<A: AddressingMode>(
             let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
             // check for deadlock
             if new_pc == c.regs.pc {
-                return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
             }
             c.regs.pc = new_pc;
         }
@@ -1334,6 +1382,11 @@ fn cli<A: AddressingMode>(
     if !decode_only {
         // enable interrupts, clear the flag
         c.set_cpu_flags(CpuFlags::I, false);
+
+        if c.irq_pending {
+            // we'll trigger an irq right after
+            c.must_trigger_irq = true;
+        }
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -1956,7 +2009,11 @@ fn jmp<A: AddressingMode>(
     if !decode_only {
         // check for deadlock
         if tgt == c.regs.pc {
-            return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            return Err(CpuError::new_default(
+                CpuErrorType::Deadlock,
+                c.regs.pc,
+                None,
+            ));
         }
         // set pc
         c.regs.pc = tgt;
@@ -2009,7 +2066,11 @@ fn jsr<A: AddressingMode>(
 
         // check for deadlock
         if tgt == c.regs.pc {
-            return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            return Err(CpuError::new_default(
+                CpuErrorType::Deadlock,
+                c.regs.pc,
+                None,
+            ));
         }
         // set pc
         c.regs.pc = tgt;
@@ -2042,7 +2103,7 @@ fn kil<A: AddressingMode>(
     }
 
     // invalid !
-    let mut e = CpuError::new_default(CpuErrorType::InvalidOpcode, None);
+    let mut e = CpuError::new_default(CpuErrorType::InvalidOpcode, c.regs.pc, None);
     e.address = c.regs.pc as usize;
     Err(e)
 }
@@ -2609,6 +2670,12 @@ fn plp<A: AddressingMode>(
         // ensure flag Unused is set and B is unset
         c.set_cpu_flags(CpuFlags::B, false);
         c.set_cpu_flags(CpuFlags::U, true);
+        if c.irq_pending {
+            if !c.is_cpu_flag_set(CpuFlags::I) {
+                // we'll trigger an irq right after
+                c.must_trigger_irq = true;
+            }
+        }
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2874,6 +2941,10 @@ fn rti<A: AddressingMode>(
 
         // pull pc
         c.regs.pc = pop_word_le(c, d)?;
+
+        // apply fix if needed, and anyway reset the flag.
+        c.regs.pc = c.regs.pc.wrapping_add(c.fix_pc_rti as u16);
+        c.fix_pc_rti = 0;
     }
     Ok((
         if decode_only { A::len() } else { 0 },

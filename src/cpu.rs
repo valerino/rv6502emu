@@ -237,7 +237,15 @@ pub struct Cpu {
     pub bus: Box<dyn Bus>,
 
     /// callback for the user (optional).
-    pub cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
+    cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
+    /// signal if an irq has been triggered.
+    pub must_trigger_irq: bool,
+    /// signal if an nmi has been triggered.
+    pub must_trigger_nmi: bool,
+    /// is there an intewrrupt pending ?
+    irq_pending: bool,
+    /// to handle interrupt return after RTI in certain situations.
+    fix_pc_rti: i8,
 }
 
 impl Cpu {
@@ -308,6 +316,10 @@ impl Cpu {
             cb: cb,
             done: false,
             debug: false,
+            must_trigger_irq: false,
+            must_trigger_nmi: false,
+            irq_pending: false,
+            fix_pc_rti: 0,
         };
         c
     }
@@ -396,7 +408,6 @@ impl Cpu {
         let mut is_error = false;
         let mut opcode_cycles: usize = 0;
         let mut run_cycles: usize = 0;
-
         // loop
         'interpreter: loop {
             // fetch
@@ -459,6 +470,38 @@ impl Cpu {
                         instr_size = a;
                     }
                 };
+
+                // call callback if any
+                self.call_callback(self.regs.pc, 0, 0, CpuOperation::Exec);
+                // check if done has been set
+                if self.done {
+                    // exiting
+                    break 'interpreter;
+                }
+
+                // check if irq or nmi has to be triggered
+                if self.must_trigger_irq || self.must_trigger_nmi {
+                    // trigger irq or nmi
+                    if self.must_trigger_nmi {
+                        self.fix_pc_rti = instr_size;
+                        self.nmi(Some(dbg))?;
+                        self.must_trigger_nmi = false;
+                        if self.must_trigger_irq {
+                            // there's an irq pending, CLI opcode will detect it
+                            self.irq_pending = true;
+                        }
+                        self.must_trigger_irq = false;
+                        continue 'interpreter;
+                    }
+                    if self.must_trigger_irq {
+                        self.fix_pc_rti = instr_size;
+                        self.irq(Some(dbg))?;
+                        self.must_trigger_irq = false;
+                        self.must_trigger_nmi = false;
+                        continue 'interpreter;
+                    }
+                }
+
                 // check if we have an exec breakpoint at pc
                 if self.debug {
                     match dbg.has_enabled_breakpoint(
@@ -501,14 +544,6 @@ impl Cpu {
                 "p" => {
                     silence_output = false;
                     if !bp_rw_triggered {
-                        // call callback if any
-                        self.call_callback(self.regs.pc, 0, 0, CpuOperation::Exec);
-                        // check if done has been set
-                        if self.done {
-                            // exiting
-                            break 'interpreter;
-                        }
-
                         // execute decoded instruction
                         let _ = match opcode_f(
                             self,
@@ -560,6 +595,13 @@ impl Cpu {
                         // we're done
                         break 'interpreter;
                     }
+
+                    // finally recheck if there was a pending irq re-enabled by CLI
+                    if self.must_trigger_irq {
+                        self.irq(Some(dbg))?;
+                        self.must_trigger_irq = false;
+                        self.must_trigger_nmi = false;
+                    }
                 }
                 "q" => {
                     // gracefully exit
@@ -578,14 +620,16 @@ impl Cpu {
     /**
      * internal, triggers irq or nmi
      */
-    fn irq_nmi(&mut self, debugger: Option<&Debugger>, v: u16) -> Result<(), CpuError> {
+    fn irq_nmi(&mut self, debugger: Option<&mut Debugger>, v: u16) -> Result<(), CpuError> {
+        let mut empty_dbg = Debugger::new(false);
+        let dbg = debugger.unwrap_or(&mut empty_dbg);
         // push pc and p on stack
-        opcodes::push_word_le(self, debugger, self.regs.pc)?;
+        opcodes::push_word_le(self, Some(dbg), self.regs.pc)?;
         // push P with U set
         // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
         let mut flags = CpuFlags::from_bits(self.regs.p).unwrap();
         flags.set(CpuFlags::U, true);
-        opcodes::push_byte(self, debugger, flags.bits())?;
+        opcodes::push_byte(self, Some(dbg), flags.bits())?;
 
         // set I
         self.set_cpu_flags(CpuFlags::I, true);
@@ -595,7 +639,11 @@ impl Cpu {
 
         // check for deadlock
         if addr == self.regs.pc {
-            return Err(CpuError::new_default(CpuErrorType::Deadlock, None));
+            return Err(CpuError::new_default(
+                CpuErrorType::Deadlock,
+                self.regs.pc,
+                None,
+            ));
         }
         self.regs.pc = addr;
         Ok(())
@@ -604,9 +652,9 @@ impl Cpu {
     /**
      * triggers an irq.
      */
-    pub fn irq(&mut self, debugger: Option<&Debugger>) -> Result<(), CpuError> {
+    pub fn irq(&mut self, debugger: Option<&mut Debugger>) -> Result<(), CpuError> {
+        println!("triggering irq !");
         let res = self.irq_nmi(debugger, Vectors::IRQ as u16);
-
         // call callback if any
         self.call_callback(0, 0, 0, CpuOperation::Irq);
         res
@@ -615,7 +663,8 @@ impl Cpu {
     /**
      * triggers an nmi.
      */
-    pub fn nmi(&mut self, debugger: Option<&Debugger>) -> Result<(), CpuError> {
+    pub fn nmi(&mut self, debugger: Option<&mut Debugger>) -> Result<(), CpuError> {
+        println!("triggering nmi !");
         let res = self.irq_nmi(debugger, Vectors::NMI as u16);
 
         // call callback if any

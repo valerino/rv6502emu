@@ -93,14 +93,12 @@ impl std::fmt::Display for CpuError {
             CpuErrorType::MemoryLoad => {
                 write!(f, "Error ({}), msg={}", self.t, self.msg.as_ref().unwrap(),)
             }
-            CpuErrorType::InvalidOpcode => {
-                write!(f, "Error ({})", self.t,)
-            }
-            CpuErrorType::Generic | CpuErrorType::Deadlock => {
+            CpuErrorType::Generic | CpuErrorType::InvalidOpcode | CpuErrorType::Deadlock => {
                 write!(
                     f,
-                    "Error ({}) {}",
+                    "Error ({}) PC=${:04x} {}",
                     self.t,
+                    self.address,
                     self.msg.as_ref().unwrap_or(&String::from(""))
                 )
             }
@@ -135,10 +133,10 @@ impl CpuError {
     /**
      * constructs a new default error, with optional message
      */
-    pub fn new_default(t: CpuErrorType, m: Option<String>) -> Self {
+    pub fn new_default(t: CpuErrorType, address: u16, m: Option<String>) -> Self {
         let e = CpuError {
             t: t,
-            address: 0,
+            address: address as usize,
             mem_size: 0,
             access_size: 0,
             bp_idx: 0,

@@ -336,13 +336,15 @@ impl Debugger {
         println!("\tlg .................................... enable/disable cpu log to console (warning, slows down a lot!).",);
         println!("\tq ..................................... exit emulator.");
         println!("\tr ..................................... show registers.");
+        println!("\trst [$address] ........................ reset (restart from given [$address], or from address contained at reset vector if empty).");
         println!("\tp ..................................... step next instruction.");
         println!(
             "\to ..................................... enable/disable show registers before the opcode, default is off (needs logging enabled)."
         );
         println!("\ts <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.",
         );
-        println!("\tt [$address] .......................... reset (restart from given [$address], or defaults to reset vector).");
+        println!("\ttn .................................... trigger NMI.");
+        println!("\ttq .................................... trigger IRQ.");
         println!("\tv <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).");
         println!("\tx <len> <$address> .................... hexdump <len> bytes at <$address>.");
         println!("NOTE: all addresses/values must be hex where specified, the $ prefix is optional and just for clarity ($0400 = 400). 
@@ -503,6 +505,10 @@ impl Debugger {
                 debug_out_registers(c);
                 return (String::from("*"), true);
             }
+            // reset
+            "rst" => {
+                return (String::from("*"), self.cmd_reset(c, it));
+            }
             // step
             "p" => {
                 return (String::from("p"), true);
@@ -524,9 +530,19 @@ impl Debugger {
             "s" => {
                 return (String::from("*"), self.cmd_dump_save_memory(c, cmd, it));
             }
-            // reset
-            "t" => {
-                return (String::from("*"), self.cmd_reset(c, it));
+            // trigger nmi
+            "tn" => {
+                c.nmi(Some(self)).unwrap();
+                println!("NMI triggered!");
+                self.going = false;
+                return (String::from("p"), true);
+            }
+            // trigger irq
+            "tq" => {
+                c.irq(Some(self)).unwrap();
+                println!("IRQ triggered!");
+                self.going = false;
+                return (String::from("p"), true);
             }
             // edit registers
             "v" => {
