@@ -11,7 +11,7 @@ said that, **please note that everything (except implementation errors, of cours
 - undocumented opcodes: 100%
 - disassembler : 100%
 - assembler : 100%
-- emulator : 100%, *including BCD mode for ADC/SBC*, passes [Klaus](https://github.com/Klaus2m5/6502_65C02_functional_tests) test.
+- emulator : 100%, *including BCD mode for ADC/SBC*, passes **all** [Klaus (functional, decimal, interrupts)](https://github.com/Klaus2m5/6502_65C02_functional_tests) tests.
 
 ## usage
 
@@ -84,10 +84,12 @@ debugger supported commands:
         lg .................................... enable/disable cpu log to console (warning, slows down a lot!).
         q ..................................... exit emulator.
         r ..................................... show registers.
+        rst [$address] ........................ reset (restart from given [$address], or from address contained at reset vector if empty).
         p ..................................... step next instruction.
         o ..................................... enable/disable show registers before the opcode, default is off (needs logging enabled).
         s <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.
-        t [$address] .......................... reset (restart from given [$address], or defaults to reset vector).
+        tn .................................... trigger NMI and set PC=NMI handler.
+        tq .................................... trigger IRQ and set PC=IRQ handler.
         v <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).
         x <len> <$address> .................... hexdump <len> bytes at <$address>.
 NOTE: all addresses/values must be hex where specified, the $ prefix is optional and just for clarity ($0400 = 400). 

@@ -343,8 +343,8 @@ impl Debugger {
         );
         println!("\ts <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.",
         );
-        println!("\ttn .................................... trigger NMI.");
-        println!("\ttq .................................... trigger IRQ.");
+        println!("\ttn .................................... trigger NMI and set PC=NMI handler.");
+        println!("\ttq .................................... trigger IRQ and set PC=IRQ handler.");
         println!("\tv <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).");
         println!("\tx <len> <$address> .................... hexdump <len> bytes at <$address>.");
         println!("NOTE: all addresses/values must be hex where specified, the $ prefix is optional and just for clarity ($0400 = 400). 

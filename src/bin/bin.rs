@@ -127,9 +127,6 @@ fn interrupt_test(c: &mut Cpu, d: Option<&mut Debugger>) {
     let dbg = d.unwrap_or(&mut empty_dbg);
 
     // and run
-    dbg.parse_cmd(c, "bx $6e9");
-    dbg.parse_cmd(c, "o");
-
     c.run(Some(dbg), 0).unwrap();
 }
 
