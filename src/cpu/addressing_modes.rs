@@ -31,8 +31,11 @@
 use crate::cpu::cpu_error::CpuError;
 use crate::cpu::debugger::breakpoints::BreakpointType;
 use crate::cpu::debugger::Debugger;
-use crate::cpu::{Cpu, CpuOperation};
+use crate::cpu::{Cpu, CpuOperation, CpuType};
 use crate::utils;
+use std::fmt::Display;
+use std::fmt::Error;
+use std::fmt::Formatter;
 
 /**
  * this is used by the assembler part to tag elements in the opcode matrix
@@ -52,6 +55,53 @@ pub(crate) enum AddressingModeId {
     Zpg,
     Zpx,
     Zpy,
+}
+
+impl Display for AddressingModeId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        match self {
+            AddressingModeId::Acc => {
+                write!(f, "Acc")?;
+            }
+            AddressingModeId::Abs => {
+                write!(f, "Abs")?;
+            }
+            AddressingModeId::Abx => {
+                write!(f, "AbX")?;
+            }
+            AddressingModeId::Aby => {
+                write!(f, "AbY")?;
+            }
+            AddressingModeId::Imm => {
+                write!(f, "Imm")?;
+            }
+            AddressingModeId::Imp => {
+                write!(f, "Imp")?;
+            }
+            AddressingModeId::Ind => {
+                write!(f, "Ind")?;
+            }
+            AddressingModeId::Xin => {
+                write!(f, "Xin")?;
+            }
+            AddressingModeId::Iny => {
+                write!(f, "InY")?;
+            }
+            AddressingModeId::Rel => {
+                write!(f, "Rel")?;
+            }
+            AddressingModeId::Zpg => {
+                write!(f, "Zpg")?;
+            }
+            AddressingModeId::Zpx => {
+                write!(f, "ZpX")?;
+            }
+            AddressingModeId::Zpy => {
+                write!(f, "ZpY")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /**
@@ -160,10 +210,11 @@ impl AddressingMode for AccumulatorAddressing {
     fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = c.bus.get_memory().read_byte(c.regs.pc as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x}\t\t-->\t{} A\t[Acc])",
+            "${:04x}:\t{:02x}\t\t-->\t{} A\t[{}])",
             c.regs.pc,
             b,
-            opcode_name.to_uppercase()
+            opcode_name.to_uppercase(),
+            AddressingModeId::Acc
         ))
     }
 
@@ -201,13 +252,14 @@ impl AddressingMode for AbsoluteAddressing {
         let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
         let tgt = Self::target_address(c, false)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}\t[Abs, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             b3,
             opcode_name.to_uppercase(),
             (((b3 as u16) << 8) | (b2 as u16)),
+            AddressingModeId::Abs,
             tgt.0
         ))
     }
@@ -238,13 +290,14 @@ impl AddressingMode for AbsoluteXAddressing {
         let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
         let tgt = Self::target_address(c, false)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, X\t[AbX, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, X\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             b3,
             opcode_name.to_uppercase(),
             (((b3 as u16) << 8) | (b2 as u16)),
+            AddressingModeId::Abx,
             tgt.0
         ))
     }
@@ -284,13 +337,14 @@ impl AddressingMode for AbsoluteYAddressing {
         let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
         let tgt = Self::target_address(c, false)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, Y\t[AbY, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, Y\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             b3,
             opcode_name.to_uppercase(),
             (((b3 as u16) << 8) | (b2 as u16)),
+            AddressingModeId::Aby,
             tgt.0
         ))
     }
@@ -329,12 +383,13 @@ impl AddressingMode for ImmediateAddressing {
         let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
         let tgt = Self::target_address(c, false)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} #${:02x}\t[Imm, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} #${:02x}\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             opcode_name.to_uppercase(),
             b2,
+            AddressingModeId::Imm,
             tgt.0
         ))
     }
@@ -356,10 +411,11 @@ impl AddressingMode for ImpliedAddressing {
     fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = c.bus.get_memory().read_byte(c.regs.pc as usize)?;
         Ok(format!(
-            "${:04x}:\t{:02x}\t\t-->\t{}\t\t[Imp]",
+            "${:04x}:\t{:02x}\t\t-->\t{}\t\t[{}]",
             c.regs.pc,
             b,
-            opcode_name.to_uppercase()
+            opcode_name.to_uppercase(),
+            AddressingModeId::Imp
         ))
     }
 }
@@ -381,13 +437,14 @@ impl AddressingMode for IndirectAddressing {
         let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
         let tgt = Self::target_address(c, false)?;
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} (${:04x})\t[Ind, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} (${:04x})\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             b3,
             opcode_name.to_uppercase(),
             (((b3 as u16) << 8) | (b2 as u16)),
+            AddressingModeId::Ind,
             tgt.0
         ))
     }
@@ -400,8 +457,8 @@ impl AddressingMode for IndirectAddressing {
         let w = c.bus.get_memory().read_word_le((c.regs.pc + 1) as usize)?;
 
         let ww: u16;
-        if w & 0xff == 0xff {
-            // emulate 6502 access bug on page boundary:
+        if w & 0xff == 0xff && c.cpu_type == CpuType::MOS6502 {
+            // emulate 6502 JMP bug on access across page boundary (this addressing mode is used by JMP only):
             // An original 6502 has does not correctly fetch the target address if the indirect vector falls on a page boundary (e.g. $xxFF where xx is any value from $00 to $FF).
             // In this case fetches the LSB from $xxFF as expected but takes the MSB from $xx00.
             let lsb = c.bus.get_memory().read_byte(w as usize)?;
@@ -437,12 +494,13 @@ impl AddressingMode for XIndirectAddressing {
         let tgt = Self::target_address(c, false)?;
 
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}, X)\t[Xin, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}, X)\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             opcode_name.to_uppercase(),
             b2,
+            AddressingModeId::Xin,
             tgt.0
         ))
     }
@@ -488,12 +546,13 @@ impl AddressingMode for IndirectYAddressing {
         let tgt = Self::target_address(c, false)?;
 
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}), Y\t[InY, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}), Y\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             opcode_name.to_uppercase(),
             b2 as u8,
+            AddressingModeId::Iny,
             tgt.0
         ))
     }
@@ -539,12 +598,13 @@ impl AddressingMode for RelativeAddressing {
         let tgt = Self::target_address(c, false)?;
 
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[Rel, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             opcode_name.to_uppercase(),
             b2,
+            AddressingModeId::Rel,
             tgt.0
         ))
     }
@@ -581,12 +641,13 @@ impl AddressingMode for ZeroPageAddressing {
         let tgt = Self::target_address(c, false)?;
 
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[Zpg, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             opcode_name.to_uppercase(),
             b2,
+            AddressingModeId::Zpg,
             tgt.0
         ))
     }
@@ -623,12 +684,13 @@ impl AddressingMode for ZeroPageXAddressing {
         let tgt = Self::target_address(c, false)?;
 
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, X\t[ZpX, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, X\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             opcode_name.to_uppercase(),
             b2,
+            AddressingModeId::Zpx,
             tgt.0
         ))
     }
@@ -667,12 +729,13 @@ impl AddressingMode for ZeroPageYAddressing {
         let tgt = Self::target_address(c, false)?;
 
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, Y\t[ZpY, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, Y\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
             opcode_name.to_uppercase(),
             b2,
+            AddressingModeId::Zpy,
             tgt.0
         ))
     }

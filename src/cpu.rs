@@ -443,7 +443,6 @@ impl Cpu {
     pub fn run(&mut self, debugger: Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
         let mut bp_rw_triggered = false;
         let mut instr_size: i8 = 0;
-
         // construct an empty, disabled, debugger to use when None is passed in
         let mut empty_dbg = Debugger::new(false);
         let dbg = debugger.unwrap_or(&mut empty_dbg);
