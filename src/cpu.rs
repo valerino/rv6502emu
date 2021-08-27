@@ -79,6 +79,20 @@ pub enum CpuType {
     WDC65C02,
 }
 
+impl Display for CpuType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        match self {
+            CpuType::MOS6502 => {
+                write!(f, "MOS6502")?;
+            }
+            CpuType::WDC65C02 => {
+                write!(f, "WDC65C02")?;
+            }
+        };
+        Ok(())
+    }
+}
+
 bitflags! {
     /**
      * flags (values for the P register).
@@ -143,23 +157,21 @@ impl Display for CpuCallbackContext {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         match self.operation {
             CpuOperation::Irq | CpuOperation::Nmi => {
-                write!(f, "CALLBACK! type={:?}", self.operation).expect("");
+                write!(f, "CALLBACK! type={:?}", self.operation)?;
             }
             CpuOperation::Read | CpuOperation::Write => {
                 write!(
                     f,
                     "CALLBACK! type={:?}, address=${:04x}, value=${:02x}, access_size={}",
                     self.operation, self.address, self.value, self.access_size
-                )
-                .expect("");
+                )?;
             }
             CpuOperation::Brk | CpuOperation::Exec => {
                 write!(
                     f,
                     "CALLBACK! type={:?}, address=${:04x}",
                     self.operation, self.address
-                )
-                .expect("");
+                )?;
             }
         }
         Ok(())
@@ -178,8 +190,7 @@ impl Display for Registers {
             self.s,
             self.p,
             self.flags_to_string(),
-        )
-        .expect("");
+        )?;
 
         Ok(())
     }
@@ -495,6 +506,7 @@ impl Cpu {
                 let _ = match opcode_f(
                     self,
                     Some(dbg),
+                    b, // the opcode byte
                     0,
                     false,          // extra_cycle_on_page_crossing
                     true,           // decode only
@@ -594,6 +606,7 @@ impl Cpu {
                         let _ = match opcode_f(
                             self,
                             Some(dbg),
+                            b, // the opcode byte
                             in_cycles,
                             add_extra_cycle_on_page_crossing,
                             false, // decode only

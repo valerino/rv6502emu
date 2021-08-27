@@ -46,15 +46,18 @@ pub(crate) enum AddressingModeId {
     Abs,
     Abx,
     Aby,
+    Aix,
     Imm,
     Imp,
     Ind,
+    Izp,
     Xin,
     Iny,
     Rel,
     Zpg,
     Zpx,
     Zpy,
+    Zpr,
 }
 
 impl Display for AddressingModeId {
@@ -72,6 +75,9 @@ impl Display for AddressingModeId {
             AddressingModeId::Aby => {
                 write!(f, "AbY")?;
             }
+            AddressingModeId::Aix => {
+                write!(f, "AiX")?;
+            }
             AddressingModeId::Imm => {
                 write!(f, "Imm")?;
             }
@@ -80,6 +86,9 @@ impl Display for AddressingModeId {
             }
             AddressingModeId::Ind => {
                 write!(f, "Ind")?;
+            }
+            AddressingModeId::Izp => {
+                write!(f, "Izp")?;
             }
             AddressingModeId::Xin => {
                 write!(f, "Xin")?;
@@ -98,6 +107,9 @@ impl Display for AddressingModeId {
             }
             AddressingModeId::Zpy => {
                 write!(f, "ZpY")?;
+            }
+            AddressingModeId::Zpr => {
+                write!(f, "Zpr")?;
             }
         }
         Ok(())
@@ -752,6 +764,135 @@ impl AddressingMode for ZeroPageYAddressing {
 
         // and add y, wrapping
         let w = w.wrapping_add(c.regs.y);
+        Ok((w as u16, false))
+    }
+}
+
+/**
+ * 65C02 only!
+ * Many 65C02 instruction can operate on memory locations specified indirectly through zero page.
+ * For example if location $20 contains $31 and location $21 contains $65 then the instruction LDA ($20) will load the byte stored at $6531 into the accumulator.
+ */
+pub(crate) struct IndirectZeroPageAddressing;
+impl AddressingMode for IndirectZeroPageAddressing {
+    fn len() -> i8 {
+        2
+    }
+
+    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
+        let m = c.bus.get_memory();
+        let b1 = m.read_byte(c.regs.pc as usize)?;
+        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        let tgt = Self::target_address(c, false)?;
+
+        Ok(format!(
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x})\t[{}, tgt=${:04x}]",
+            c.regs.pc,
+            b1,
+            b2,
+            opcode_name.to_uppercase(),
+            b2,
+            AddressingModeId::Izp,
+            tgt.0
+        ))
+    }
+
+    fn target_address(
+        c: &mut Cpu,
+        _add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, bool), CpuError> {
+        // read address in the zeropage
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+
+        // read address indirect
+        let ww = c.bus.get_memory().read_word_le(w as usize)?;
+        Ok((ww as u16, false))
+    }
+}
+
+/**
+ * 65C02 only!
+ * This mode has been added to the JMP instruction to support jump tables.
+ * The value of the X register is added to the absolute location in the instruction to form the address.
+ * The 16 bit value held at this address is the final target location.
+ */
+pub(crate) struct AbsoluteIndexedXAddressing;
+impl AddressingMode for AbsoluteIndexedXAddressing {
+    fn len() -> i8 {
+        3
+    }
+
+    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
+        let m = c.bus.get_memory();
+        let b1 = m.read_byte(c.regs.pc as usize)?;
+        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
+        let tgt = Self::target_address(c, false)?;
+        Ok(format!(
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} (${:04x}, X)\t[{}, tgt=${:04x}]",
+            c.regs.pc,
+            b1,
+            b2,
+            b3,
+            opcode_name.to_uppercase(),
+            (((b3 as u16) << 8) | (b2 as u16)),
+            AddressingModeId::Aix,
+            tgt.0
+        ))
+    }
+
+    fn target_address(
+        c: &mut Cpu,
+        _add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, bool), CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_word_le((c.regs.pc.wrapping_add(1)) as usize)?;
+        let ww = w.wrapping_add(c.regs.x as u16);
+        let www = c.bus.get_memory().read_word_le(ww as usize)?;
+        Ok((www, false))
+    }
+}
+
+/**
+ * 65C02 only!
+ * This is mostly the same as Relative addressing.
+ * addr = rd_mem16(pc+1) + pc + 2;  pc += 0; // Leave PC at ZP operand
+ */
+pub(crate) struct ZeroPageRelativeAddressing;
+impl AddressingMode for ZeroPageRelativeAddressing {
+    fn len() -> i8 {
+        2
+    }
+
+    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
+        let m = c.bus.get_memory();
+        let b1 = m.read_byte(c.regs.pc as usize)?;
+        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        let tgt = Self::target_address(c, false)?;
+
+        Ok(format!(
+            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[{}, tgt=${:04x}]",
+            c.regs.pc,
+            b1,
+            b2,
+            opcode_name.to_uppercase(),
+            b2,
+            AddressingModeId::Zpr,
+            tgt.0
+        ))
+    }
+
+    fn target_address(
+        c: &mut Cpu,
+        _add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, bool), CpuError> {
+        let w = c.regs.pc.wrapping_add(1);
+
         Ok((w as u16, false))
     }
 }

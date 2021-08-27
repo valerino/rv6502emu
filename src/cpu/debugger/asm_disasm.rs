@@ -109,7 +109,7 @@ impl Debugger {
                 Ok(()) => (),
             };
             // decode
-            match opcode_f(c, None, 0, false, true, false) {
+            match opcode_f(c, None, b, 0, false, true, false) {
                 Err(e) => {
                     println!("{}", e);
                     res = false;
@@ -266,6 +266,21 @@ impl Debugger {
                 mode_id = AddressingModeId::Iny;
                 operand_s.truncate(operand_s.len() - 3);
                 operand_s.remove(0);
+            } else if operand_s.starts_with("$(") && operand_s.len() <= 5 {
+                // indirect ZP (65c02)
+                mode_id = AddressingModeId::Izp;
+                operand_s.truncate(operand_s.len() - 1);
+                operand_s.remove(0);
+                operand_s.remove(0);
+            } else if operand_s.starts_with("($") && operand_s.ends_with(",x") {
+                // absolute indirect x (65c02)
+                mode_id = AddressingModeId::Aix;
+                operand_s.truncate(operand_s.len() - 3);
+                operand_s.remove(0);
+                operand_s.remove(0);
+            } else if operand_s.contains(",$") {
+                // zeropage relative (65c02)
+                mode_id = AddressingModeId::Zpr;
             } else if operand_s.starts_with("$") && operand_s.len() <= 3 {
                 if opcode.eq("bpl")
                     || opcode.eq("bmi")
@@ -347,36 +362,87 @@ impl Debugger {
                 }
                 AddressingModeId::Abs
                 | AddressingModeId::Abx
+                | AddressingModeId::Zpr
+                | AddressingModeId::Aix
                 | AddressingModeId::Aby
                 | AddressingModeId::Ind => {
-                    let _ = match u16::from_str_radix(&operand_s[1..], 16) {
-                        Err(_) => {
-                            println!("invalid opcode!");
-                            continue 'assembler;
-                        }
-                        Ok(a) => {
-                            if c.bus
-                                .get_memory()
-                                .write_byte(addr as usize, op_byte)
-                                .is_err()
-                            {
-                                res = false;
-                                break 'assembler;
+                    if mode_id == AddressingModeId::Zpr {
+                        // TODO: implement better, correct syntax should be $xx,$yyyy where $yyyy is a PC to branch on (which translates to a signed 1-byte offset)
+                        // first split $xx,$yy
+                        let v: Vec<&str> = operand_s.split(',').collect();
+                        let b1: u8;
+                        let b2: u8;
+                        // get bytes
+                        let _ = match u8::from_str_radix(&v[0][1..], 16) {
+                            Err(_) => {
+                                println!("invalid opcode!");
+                                continue 'assembler;
                             }
-                            addr = addr.wrapping_add(1);
-                            if c.bus.get_memory().write_word_le(addr as usize, a).is_err() {
-                                res = false;
-                                break 'assembler;
+                            Ok(a) => b1 = a,
+                        };
+                        let _ = match u8::from_str_radix(&v[1][1..], 16) {
+                            Err(_) => {
+                                println!("invalid opcode!");
+                                continue 'assembler;
                             }
-                            addr = addr.wrapping_add(2 as u16);
+                            Ok(a) => b2 = a,
+                        };
+
+                        // write opcode
+                        if c.bus
+                            .get_memory()
+                            .write_byte(addr as usize, op_byte)
+                            .is_err()
+                        {
+                            res = false;
+                            break 'assembler;
                         }
-                    };
+                        addr = addr.wrapping_add(1);
+
+                        // write zeropage address
+                        if c.bus.get_memory().write_byte(addr as usize, b1).is_err() {
+                            res = false;
+                            break 'assembler;
+                        }
+                        addr = addr.wrapping_add(1);
+
+                        // write offset
+                        if c.bus.get_memory().write_byte(addr as usize, b2).is_err() {
+                            res = false;
+                            break 'assembler;
+                        }
+                        addr = addr.wrapping_add(1);
+                    } else {
+                        let _ = match u16::from_str_radix(&operand_s[1..], 16) {
+                            Err(_) => {
+                                println!("invalid opcode!");
+                                continue 'assembler;
+                            }
+                            Ok(a) => {
+                                if c.bus
+                                    .get_memory()
+                                    .write_byte(addr as usize, op_byte)
+                                    .is_err()
+                                {
+                                    res = false;
+                                    break 'assembler;
+                                }
+                                addr = addr.wrapping_add(1);
+                                if c.bus.get_memory().write_word_le(addr as usize, a).is_err() {
+                                    res = false;
+                                    break 'assembler;
+                                }
+                                addr = addr.wrapping_add(2 as u16);
+                            }
+                        };
+                    }
                 }
                 AddressingModeId::Rel
                 | AddressingModeId::Imm
                 | AddressingModeId::Zpg
                 | AddressingModeId::Zpx
                 | AddressingModeId::Zpy
+                | AddressingModeId::Izp
                 | AddressingModeId::Iny
                 | AddressingModeId::Xin => {
                     let _ = match u8::from_str_radix(&operand_s[1..], 16) {

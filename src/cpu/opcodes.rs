@@ -80,7 +80,7 @@ lazy_static! {
      *
      * for clarity, each Vec element is a tuple defined as this (with named return values):
      *
-     * (< fn(c: &mut Cpu, d: Option<& Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool, quiet: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, d: Option<& Debugger>, in_cycles: usize, add_extra_cycle:bool) >)
+     * (< fn(c: &mut Cpu, d: Option<&Debugger>, opcode_byte: u8, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool, quiet: bool) -> Result<(instr_size:i8, out_cycles:usize), CpuError>, d: Option<& Debugger>, in_cycles: usize, add_extra_cycle:bool) >)
      *
      * all the opcodes info are taken from, in no particular order :
      *
@@ -90,7 +90,7 @@ lazy_static! {
      * - http://www.obelisk.me.uk/6502/reference.html (WARNING: ASL, LSR, ROL, ROR info is wrong! flag Z is set when RESULT=0, not when A=0. i fixed this in functions comments.)
      * - [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
      */
-    pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool, quiet: bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
+    pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, opcode_byte: u8, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only:bool, quiet: bool) -> Result<(i8, usize), CpuError>, usize, bool, OpcodeMarker)> =
         vec![
             // 0x0 - 0xf
             (brk::<ImpliedAddressing>, 7, false, OpcodeMarker{ name: "brk", id: Imp}), (ora::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "ora", id: Xin}), (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}), (slo::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "slo", id: Xin}),
@@ -314,6 +314,7 @@ pub(super) fn push_word_le(c: &mut Cpu, d: Option<&Debugger>, w: u16) -> Result<
 fn adc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -380,6 +381,7 @@ fn adc<A: AddressingMode>(
 fn ahx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -428,6 +430,7 @@ fn ahx<A: AddressingMode>(
 fn alr<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -441,11 +444,11 @@ fn alr<A: AddressingMode>(
     if !decode_only {
         // and (preserve flags, n and z are set in lfr)
         let prev_p = c.regs.p;
-        and::<A>(c, d, 0, false, decode_only, true)?;
+        and::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
         c.regs.p = prev_p;
 
         // lsr A
-        lsr::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
+        lsr::<AccumulatorAddressing>(c, d, opcode_byte, 0, false, decode_only, true)?;
     }
 
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -468,6 +471,7 @@ fn alr<A: AddressingMode>(
 fn anc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -480,7 +484,7 @@ fn anc<A: AddressingMode>(
 
     if !decode_only {
         // and
-        and::<A>(c, d, in_cycles, extra_cycle, decode_only, true)?;
+        and::<A>(c, d, opcode_byte, in_cycles, extra_cycle, decode_only, true)?;
         c.set_cpu_flags(CpuFlags::C, utils::is_signed(c.regs.a));
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
@@ -518,6 +522,7 @@ fn anc<A: AddressingMode>(
 fn and<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -564,6 +569,7 @@ fn and<A: AddressingMode>(
 fn arr<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -577,11 +583,11 @@ fn arr<A: AddressingMode>(
     if !decode_only {
         if !c.is_cpu_flag_set(CpuFlags::D) {
             // and
-            and::<A>(c, d, 0, false, decode_only, true)?;
+            and::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
 
             // ror A
             let prev_a = c.regs.a;
-            ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
+            ror::<AccumulatorAddressing>(c, d, opcode_byte, 0, false, decode_only, true)?;
 
             // set carry and overflow
             c.set_cpu_flags(CpuFlags::C, utils::is_signed(prev_a));
@@ -594,9 +600,9 @@ fn arr<A: AddressingMode>(
         } else {
             // decimal
             // and
-            and::<A>(c, d, 0, false, decode_only, true)?;
+            and::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
             let and_res = c.regs.a;
-            ror::<AccumulatorAddressing>(c, d, 0, false, decode_only, true)?;
+            ror::<AccumulatorAddressing>(c, d, opcode_byte, 0, false, decode_only, true)?;
 
             // fix for decimal
 
@@ -655,6 +661,7 @@ fn arr<A: AddressingMode>(
 fn asl<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -702,6 +709,7 @@ fn asl<A: AddressingMode>(
 fn bcc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -764,6 +772,7 @@ fn bcc<A: AddressingMode>(
 fn bcs<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -825,6 +834,7 @@ fn bcs<A: AddressingMode>(
 fn beq<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -894,6 +904,7 @@ fn beq<A: AddressingMode>(
 fn bit<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -938,6 +949,7 @@ fn bit<A: AddressingMode>(
 fn bmi<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1001,6 +1013,7 @@ fn bmi<A: AddressingMode>(
 fn bne<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1063,6 +1076,7 @@ fn bne<A: AddressingMode>(
 fn bpl<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1122,6 +1136,7 @@ fn bpl<A: AddressingMode>(
 fn brk<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1186,6 +1201,7 @@ fn brk<A: AddressingMode>(
 fn bvc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1248,6 +1264,7 @@ fn bvc<A: AddressingMode>(
 fn bvs<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1310,6 +1327,7 @@ fn bvs<A: AddressingMode>(
 fn clc<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1348,6 +1366,7 @@ fn clc<A: AddressingMode>(
 fn cld<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1387,6 +1406,7 @@ fn cld<A: AddressingMode>(
 fn cli<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1430,6 +1450,7 @@ fn cli<A: AddressingMode>(
 fn clv<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1477,6 +1498,7 @@ fn clv<A: AddressingMode>(
 fn cmp<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1524,6 +1546,7 @@ fn cmp<A: AddressingMode>(
 fn cpx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1571,6 +1594,7 @@ fn cpx<A: AddressingMode>(
 fn cpy<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1615,6 +1639,7 @@ fn cpy<A: AddressingMode>(
 fn dcp<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1627,9 +1652,9 @@ fn dcp<A: AddressingMode>(
     if !decode_only {
         // perform dec + cmp internally (flags are set according to cmp, so save before)
         let prev_p = c.regs.p;
-        dec::<A>(c, d, 0, false, decode_only, true)?;
+        dec::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
         c.regs.p = prev_p;
-        cmp::<A>(c, d, 0, false, decode_only, true)?;
+        cmp::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -1661,6 +1686,7 @@ fn dcp<A: AddressingMode>(
 fn dec<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1706,6 +1732,7 @@ fn dec<A: AddressingMode>(
 fn dex<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1746,6 +1773,7 @@ fn dex<A: AddressingMode>(
 fn dey<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1795,6 +1823,7 @@ fn dey<A: AddressingMode>(
 fn eor<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1841,6 +1870,7 @@ fn eor<A: AddressingMode>(
 fn inc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1887,6 +1917,7 @@ fn inc<A: AddressingMode>(
 fn inx<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1927,6 +1958,7 @@ fn inx<A: AddressingMode>(
 fn iny<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1967,6 +1999,7 @@ fn iny<A: AddressingMode>(
 fn isc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -1979,14 +2012,14 @@ fn isc<A: AddressingMode>(
     if !decode_only {
         // perform inc + sbc internally (sbc sets p, preserve carry flag after inc)
         let prev_p = c.regs.p;
-        inc::<A>(c, d, 0, false, decode_only, true)?;
+        inc::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
 
         // preserve carry
         let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
         c.regs.p = prev_p;
         c.set_cpu_flags(CpuFlags::C, is_c_set);
 
-        sbc::<A>(c, d, 0, false, decode_only, true)?;
+        sbc::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2014,6 +2047,7 @@ fn isc<A: AddressingMode>(
 fn jmp<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2064,6 +2098,7 @@ fn jmp<A: AddressingMode>(
 fn jsr<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2105,6 +2140,7 @@ fn jsr<A: AddressingMode>(
 fn kil<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     _in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2118,7 +2154,6 @@ fn kil<A: AddressingMode>(
         // perform decode only, no execution
         return Ok((A::len(), 0));
     }
-
     // invalid !
     let mut e = CpuError::new_default(CpuErrorType::InvalidOpcode, c.regs.pc, None);
     e.address = c.regs.pc as usize;
@@ -2143,6 +2178,7 @@ fn kil<A: AddressingMode>(
 fn las<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2187,6 +2223,7 @@ fn las<A: AddressingMode>(
 fn lax<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2236,6 +2273,7 @@ fn lax<A: AddressingMode>(
 fn lda<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2281,6 +2319,7 @@ fn lda<A: AddressingMode>(
 fn ldx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2326,6 +2365,7 @@ fn ldx<A: AddressingMode>(
 fn ldy<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2373,6 +2413,7 @@ fn ldy<A: AddressingMode>(
 fn lsr<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2419,6 +2460,7 @@ fn lsr<A: AddressingMode>(
 fn lxa<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2467,6 +2509,7 @@ fn lxa<A: AddressingMode>(
 fn nop<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     _decode_only: bool,
@@ -2510,6 +2553,7 @@ fn nop<A: AddressingMode>(
 fn ora<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2551,6 +2595,7 @@ fn ora<A: AddressingMode>(
 fn pha<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2591,6 +2636,7 @@ fn pha<A: AddressingMode>(
 fn php<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2630,6 +2676,7 @@ fn php<A: AddressingMode>(
 fn pla<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2671,6 +2718,7 @@ fn pla<A: AddressingMode>(
 fn plp<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2722,6 +2770,7 @@ fn plp<A: AddressingMode>(
 fn rla<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2734,14 +2783,14 @@ fn rla<A: AddressingMode>(
     if !decode_only {
         // perform rol + and internally
         let prev_p = c.regs.p;
-        rol::<A>(c, d, 0, false, decode_only, true)?;
+        rol::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
 
         // preserve carry
         let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
         c.regs.p = prev_p;
         c.set_cpu_flags(CpuFlags::C, is_c_set);
         // n and z are set according to AND
-        and::<A>(c, d, 0, false, decode_only, true)?;
+        and::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2774,6 +2823,7 @@ fn rla<A: AddressingMode>(
 fn rol<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2830,6 +2880,7 @@ fn rol<A: AddressingMode>(
 fn ror<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2890,6 +2941,7 @@ fn ror<A: AddressingMode>(
 fn rra<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2902,7 +2954,7 @@ fn rra<A: AddressingMode>(
     if !decode_only {
         // perform ror + adc internally
         let prev_p = c.regs.p;
-        ror::<A>(c, d, 0, false, decode_only, true)?;
+        ror::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
 
         // preserve carry
         let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -2910,7 +2962,7 @@ fn rra<A: AddressingMode>(
         c.set_cpu_flags(CpuFlags::C, is_c_set);
 
         // all other flags are set by adc
-        adc::<A>(c, d, 0, false, decode_only, true)?;
+        adc::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -2941,6 +2993,7 @@ fn rra<A: AddressingMode>(
 fn rti<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -2995,6 +3048,7 @@ fn rti<A: AddressingMode>(
 fn rts<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3034,6 +3088,7 @@ fn rts<A: AddressingMode>(
 fn sax<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3074,6 +3129,7 @@ fn sax<A: AddressingMode>(
 fn sbc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3138,6 +3194,7 @@ fn sbc<A: AddressingMode>(
 fn sbx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3184,6 +3241,7 @@ fn sbx<A: AddressingMode>(
 fn sec<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3223,6 +3281,7 @@ fn sec<A: AddressingMode>(
 fn sed<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3262,6 +3321,7 @@ fn sed<A: AddressingMode>(
 fn sei<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3299,6 +3359,7 @@ fn sei<A: AddressingMode>(
 fn shx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3346,6 +3407,7 @@ fn shx<A: AddressingMode>(
 fn shy<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3397,6 +3459,7 @@ fn shy<A: AddressingMode>(
 fn slo<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3409,7 +3472,7 @@ fn slo<A: AddressingMode>(
     if !decode_only {
         // perform asl + ora internally
         let prev_p = c.regs.p;
-        asl::<A>(c, d, 0, false, decode_only, true)?;
+        asl::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
 
         // preserve carry
         let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -3417,7 +3480,7 @@ fn slo<A: AddressingMode>(
         c.set_cpu_flags(CpuFlags::C, is_c_set);
 
         // other flags are set by ora
-        ora::<A>(c, d, 0, false, decode_only, true)?;
+        ora::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -3445,6 +3508,7 @@ fn slo<A: AddressingMode>(
 fn sre<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3457,7 +3521,7 @@ fn sre<A: AddressingMode>(
     if !decode_only {
         // perform lsr + eor internally
         let prev_p = c.regs.p;
-        lsr::<A>(c, d, 0, false, decode_only, true)?;
+        lsr::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
 
         // preserve carry
         let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -3465,7 +3529,7 @@ fn sre<A: AddressingMode>(
         c.set_cpu_flags(CpuFlags::C, is_c_set);
 
         // other flags are set by eor
-        eor::<A>(c, d, 0, false, decode_only, true)?;
+        eor::<A>(c, d, opcode_byte, 0, false, decode_only, true)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -3491,6 +3555,7 @@ fn sre<A: AddressingMode>(
 fn sta<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3529,6 +3594,7 @@ fn sta<A: AddressingMode>(
 fn stx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3567,6 +3633,7 @@ fn stx<A: AddressingMode>(
 fn sty<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3603,6 +3670,7 @@ fn sty<A: AddressingMode>(
 fn tas<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3656,6 +3724,7 @@ fn tas<A: AddressingMode>(
 fn tax<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3695,6 +3764,7 @@ fn tax<A: AddressingMode>(
 fn tay<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3735,6 +3805,7 @@ fn tay<A: AddressingMode>(
 fn tsx<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3776,6 +3847,7 @@ fn tsx<A: AddressingMode>(
 fn txa<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3816,6 +3888,7 @@ fn txa<A: AddressingMode>(
 fn txs<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3855,6 +3928,7 @@ fn txs<A: AddressingMode>(
 fn tya<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
@@ -3896,6 +3970,7 @@ fn tya<A: AddressingMode>(
 fn xaa<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
+    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,

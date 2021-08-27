@@ -190,6 +190,8 @@ pub(crate) fn check_opcode_boundaries(
         AddressingModeId::Abs
         | AddressingModeId::Abx
         | AddressingModeId::Aby
+        | AddressingModeId::Aix
+        | AddressingModeId::Zpr
         | AddressingModeId::Ind => {
             check_address_boundaries(mem_size, address, 3, op, msg)?;
         }
@@ -198,6 +200,7 @@ pub(crate) fn check_opcode_boundaries(
         | AddressingModeId::Zpg
         | AddressingModeId::Zpx
         | AddressingModeId::Zpy
+        | AddressingModeId::Izp
         | AddressingModeId::Iny
         | AddressingModeId::Xin => {
             check_address_boundaries(mem_size, address, 2, op, msg)?;

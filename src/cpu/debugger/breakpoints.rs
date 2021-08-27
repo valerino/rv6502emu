@@ -158,16 +158,14 @@ impl Display for Bp {
                     } else {
                         "".to_string()
                     },
-                )
-                .expect("");
+                )?;
             } else {
                 write!(
                     f,
                     "[{},{}]",
                     self.flags_to_string(),
                     if self.enabled { "enabled" } else { "disabled" }
-                )
-                .expect("");
+                )?;
             }
         } else {
             if self.regs.is_some() {
@@ -183,8 +181,7 @@ impl Display for Bp {
                     } else {
                         "".to_string()
                     },
-                )
-                .expect("");
+                )?;
             } else {
                 write!(
                     f,
@@ -192,8 +189,7 @@ impl Display for Bp {
                     self.address,
                     self.flags_to_string(),
                     if self.enabled { "enabled" } else { "disabled" }
-                )
-                .expect("");
+                )?;
             }
         }
 
