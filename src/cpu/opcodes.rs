@@ -35,7 +35,7 @@ use crate::cpu::cpu_error::{CpuError, CpuErrorType};
 use crate::cpu::debugger::breakpoints::BreakpointType;
 use crate::cpu::debugger::Debugger;
 use crate::cpu::CpuFlags;
-use crate::cpu::{Cpu, CpuOperation, Vectors};
+use crate::cpu::{Cpu, CpuOperation, CpuType, Vectors};
 use crate::utils;
 use crate::utils::*;
 use ::function_name::named;
@@ -70,6 +70,7 @@ lazy_static! {
  * - https://www.masswerk.at/6502/6502_instruction_set.html
  * - https://problemkaputt.de/2k6specs.htm#cpu65xxmicroprocessor
  * - http://www.oxyron.de/html/opcodes02.html
+ * - http://6502.org/tutorials/65c02opcodes.html
  * - http://www.obelisk.me.uk/6502/reference.html (WARNING: ASL, LSR, ROL, ROR info is wrong! flag Z is set when RESULT=0, not when A=0. i fixed this in functions comments.)
  * - [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
  */
@@ -472,7 +473,7 @@ pub(crate) static ref OPCODE_MATRIX_65C02: Vec<( fn(c: &mut Cpu, d: Option<&Debu
         (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
         (nop::<AbsoluteAddressing>, 8, false, OpcodeMarker{ name: "nop", id: Abs}),
         (eor::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Abx}),
-        (lsr::<AbsoluteXAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Abx}),
+        (lsr::<AbsoluteXAddressing>, 6, true, OpcodeMarker{ name: "lsr", id: Abx}),
         (bbr5::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr5", id: Zpr}),
 
         // 0x60 - 0x6f
@@ -1616,6 +1617,11 @@ fn brk<A: AddressingMode>(
     if !decode_only {
         // push pc and p on stack
         push_word_le(c, d, c.regs.pc + 2)?;
+        if c.cpu_type == CpuType::WDC65C02 {
+            // clear the D flag
+            // http://6502.org/tutorials/65c02opcodes.html
+            c.regs.p.set(CpuFlags::D, false);
+        }
 
         // push P with U and B set
         // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
@@ -4552,7 +4558,7 @@ fn bbr0<A: AddressingMode>(
         decode_only,
         quiet,
         0,
-        "bbr0",
+        function_name!(),
         true,
     )
 }
@@ -4576,7 +4582,7 @@ fn bbr1<A: AddressingMode>(
         decode_only,
         quiet,
         1,
-        "bbr1",
+        function_name!(),
         true,
     )
 }
@@ -4600,7 +4606,7 @@ fn bbr2<A: AddressingMode>(
         decode_only,
         quiet,
         2,
-        "bbr2",
+        function_name!(),
         true,
     )
 }
@@ -4624,7 +4630,7 @@ fn bbr3<A: AddressingMode>(
         decode_only,
         quiet,
         3,
-        "bbr3",
+        function_name!(),
         true,
     )
 }
@@ -4648,7 +4654,7 @@ fn bbr4<A: AddressingMode>(
         decode_only,
         quiet,
         4,
-        "bbr4",
+        function_name!(),
         true,
     )
 }
@@ -4696,7 +4702,7 @@ fn bbr6<A: AddressingMode>(
         decode_only,
         quiet,
         6,
-        "bbr6",
+        function_name!(),
         true,
     )
 }
@@ -4720,7 +4726,7 @@ fn bbr7<A: AddressingMode>(
         decode_only,
         quiet,
         7,
-        "bbr7",
+        function_name!(),
         true,
     )
 }
@@ -4744,7 +4750,7 @@ fn bbs0<A: AddressingMode>(
         decode_only,
         quiet,
         0,
-        "bbs0",
+        function_name!(),
         false,
     )
 }
@@ -4768,7 +4774,7 @@ fn bbs1<A: AddressingMode>(
         decode_only,
         quiet,
         1,
-        "bbs1",
+        function_name!(),
         false,
     )
 }
@@ -4792,7 +4798,7 @@ fn bbs2<A: AddressingMode>(
         decode_only,
         quiet,
         2,
-        "bbs2",
+        function_name!(),
         false,
     )
 }
@@ -4816,7 +4822,7 @@ fn bbs3<A: AddressingMode>(
         decode_only,
         quiet,
         3,
-        "bbs3",
+        function_name!(),
         false,
     )
 }
@@ -4840,7 +4846,7 @@ fn bbs4<A: AddressingMode>(
         decode_only,
         quiet,
         4,
-        "bbs4",
+        function_name!(),
         false,
     )
 }
@@ -4864,7 +4870,7 @@ fn bbs5<A: AddressingMode>(
         decode_only,
         quiet,
         5,
-        "bbs5",
+        function_name!(),
         false,
     )
 }
@@ -4888,7 +4894,7 @@ fn bbs6<A: AddressingMode>(
         decode_only,
         quiet,
         6,
-        "bbs6",
+        function_name!(),
         false,
     )
 }
@@ -4912,11 +4918,64 @@ fn bbs7<A: AddressingMode>(
         decode_only,
         quiet,
         7,
-        "bbs7",
+        function_name!(),
         false,
     )
 }
 
+fn rmb_smb_internal<A: AddressingMode>(
+    c: &mut Cpu,
+    d: Option<&Debugger>,
+    _opcode_byte: u8,
+    in_cycles: usize,
+    extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
+    quiet: bool,
+    bit: i8,
+    name: &str,
+    is_rmb: bool,
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+
+    if !quiet {
+        debug_out_opcode::<A>(c, name)?;
+    }
+
+    if !decode_only {
+        // read operand
+        let mut b = A::load(c, d, tgt)?;
+
+        if is_rmb {
+            // reset bit
+            b &= !(1 << bit);
+        } else {
+            // set bit
+            b |= 1 << bit;
+        }
+
+        // write
+        A::store(c, d, tgt, b)?;
+    }
+    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+}
+
+/**
+ * RMB - Reset Memory Bit
+ *
+ * This a actually a set of 8 instructions. Each resets a specific bit of a byte held on zero page. For example:
+ *
+ * RMB5 VALUE
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn rmb0<A: AddressingMode>(
     c: &mut Cpu,
@@ -4927,17 +4986,18 @@ fn rmb0<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        0,
+        function_name!(),
+        true,
+    )
 }
 
 #[named]
@@ -4950,17 +5010,18 @@ fn rmb1<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        1,
+        function_name!(),
+        true,
+    )
 }
 
 #[named]
@@ -4973,17 +5034,18 @@ fn rmb2<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        2,
+        function_name!(),
+        true,
+    )
 }
 
 #[named]
@@ -4996,17 +5058,18 @@ fn rmb3<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        3,
+        function_name!(),
+        true,
+    )
 }
 
 #[named]
@@ -5019,17 +5082,18 @@ fn rmb4<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        4,
+        function_name!(),
+        true,
+    )
 }
 
 #[named]
@@ -5042,17 +5106,18 @@ fn rmb5<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        5,
+        function_name!(),
+        true,
+    )
 }
 
 #[named]
@@ -5065,17 +5130,18 @@ fn rmb6<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        6,
+        function_name!(),
+        true,
+    )
 }
 
 #[named]
@@ -5088,17 +5154,18 @@ fn rmb7<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        7,
+        function_name!(),
+        true,
+    )
 }
 
 #[named]
@@ -5111,17 +5178,18 @@ fn smb0<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        0,
+        function_name!(),
+        false,
+    )
 }
 
 #[named]
@@ -5134,17 +5202,18 @@ fn smb1<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        1,
+        function_name!(),
+        false,
+    )
 }
 
 #[named]
@@ -5157,17 +5226,18 @@ fn smb2<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        2,
+        function_name!(),
+        false,
+    )
 }
 
 #[named]
@@ -5180,17 +5250,18 @@ fn smb3<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        3,
+        function_name!(),
+        false,
+    )
 }
 
 #[named]
@@ -5203,17 +5274,18 @@ fn smb4<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        4,
+        function_name!(),
+        false,
+    )
 }
 
 #[named]
@@ -5226,17 +5298,18 @@ fn smb5<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        5,
+        function_name!(),
+        false,
+    )
 }
 
 #[named]
@@ -5249,17 +5322,18 @@ fn smb6<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        6,
+        function_name!(),
+        false,
+    )
 }
 
 #[named]
@@ -5272,19 +5346,35 @@ fn smb7<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    rmb_smb_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        7,
+        function_name!(),
+        false,
+    )
 }
 
+/**
+ * BRA - Branch Always
+ *
+ * Adds the relative displacement to the program counter to cause a branch to a new location.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn bra<A: AddressingMode>(
     c: &mut Cpu,
@@ -5295,19 +5385,46 @@ fn bra<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
+
+    // read operand
+    let b = A::load(c, d, tgt)?;
+
+    // branch
     if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
+        // branch is always taken
+        let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+        // check for deadlock
+        if new_pc == c.regs.pc {
+            return Err(CpuError::new_default(
+                CpuErrorType::Deadlock,
+                c.regs.pc,
+                None,
+            ));
+        }
+        c.regs.pc = new_pc;
     }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * PHX - Push X Register
+ *
+ * Pushes a copy of the X register  on to the stack.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn phx<A: AddressingMode>(
     c: &mut Cpu,
@@ -5318,19 +5435,32 @@ fn phx<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
+
     if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
+        push_byte(c, d, c.regs.x)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * PHY - Push Y Register
+ *
+ * Pushes a copy of the Y register  on to the stack.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn phy<A: AddressingMode>(
     c: &mut Cpu,
@@ -5341,19 +5471,30 @@ fn phy<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
+
     if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
+        push_byte(c, d, c.regs.y)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * PLX - Pull X Register
+ *
+ * Pulls an 8 bit value from the stack and into the X register. The zero and negative flags are set as appropriate.
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if X = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of X is set
+ */
 #[named]
 fn plx<A: AddressingMode>(
     c: &mut Cpu,
@@ -5364,19 +5505,30 @@ fn plx<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
+        c.regs.x = pop_byte(c, d)?;
+        set_zn_flags(c, c.regs.x);
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * PLY - Pull Y Register
+ *
+ * Pulls an 8 bit value from the stack and into the Y register. The zero and negative flags are set as appropriate.
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if A = 0
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Set if bit 7 of A is set
+ */
 #[named]
 fn ply<A: AddressingMode>(
     c: &mut Cpu,
@@ -5387,19 +5539,65 @@ fn ply<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
+        c.regs.y = pop_byte(c, d)?;
+        set_zn_flags(c, c.regs.y);
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * STP - Stop
+ *
+ * The processor halts until a hardware reset is applied.
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
+#[named]
+fn stp<A: AddressingMode>(
+    c: &mut Cpu,
+    _: Option<&Debugger>,
+    _opcode_byte: u8,
+    in_cycles: usize,
+    _extra_cycle_on_page_crossing: bool,
+    _decode_only: bool,
+    quiet: bool,
+) -> Result<(i8, usize), CpuError> {
+    if !quiet {
+        debug_out_opcode::<A>(c, function_name!())?;
+    }
+
+    // will deadlock !
+    Ok((0, in_cycles))
+}
+
+/**
+ * STZ - Store Zero
+ *
+ * M = 0
+ *
+ * Stores a zero byte value into memory.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn stz<A: AddressingMode>(
     c: &mut Cpu,
@@ -5410,19 +5608,35 @@ fn stz<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
+        // store
+        A::store(c, d, tgt, 0)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * TRB - Test and Reset Bits
+ *
+ * Z = M & A
+ * M = M & ~A
+ *
+ * The memory byte is tested to see if it contains any of the bits indicated by the value in the accumulator then the bits are reset in the memory byte.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if the memory value held any of the specified bits
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn trb<A: AddressingMode>(
     c: &mut Cpu,
@@ -5433,19 +5647,40 @@ fn trb<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
         // read operand
-        let b = A::load(c, d, tgt)?;
+        let mut b = A::load(c, d, tgt)?;
+
+        let res = (b & c.regs.a) != 0;
+        c.set_cpu_flags(CpuFlags::Z, res);
+        b &= !(c.regs.a);
+        A::store(c, d, tgt, b)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * TSB - Test and Set Bits
+ *
+ * Z = M & A
+ * M = M | A
+ *
+ * The memory byte is tested to see if it contains any of the bits indicated by the value in the accumulator then the bits are set in the memory byte.
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Set if the memory value held any of the specified bits
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn tsb<A: AddressingMode>(
     c: &mut Cpu,
@@ -5456,15 +5691,17 @@ fn tsb<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
     let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
     if !decode_only {
         // read operand
-        let b = A::load(c, d, tgt)?;
+        let mut b = A::load(c, d, tgt)?;
+        let res = (b & c.regs.a) != 0;
+        c.set_cpu_flags(CpuFlags::Z, res);
+        b |= c.regs.a;
+        A::store(c, d, tgt, b)?;
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -5472,45 +5709,25 @@ fn tsb<A: AddressingMode>(
 #[named]
 fn wai<A: AddressingMode>(
     c: &mut Cpu,
-    d: Option<&Debugger>,
+    _d: Option<&Debugger>,
     _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+    let (_tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
+    let mut len = A::len();
+
     if !decode_only {
         // read operand
-        let b = A::load(c, d, tgt)?;
+        if !c.must_trigger_irq && !c.must_trigger_nmi {
+            // will wait for interrupt
+            len = 0;
+        }
     }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
-}
-
-#[named]
-fn stp<A: AddressingMode>(
-    c: &mut Cpu,
-    d: Option<&Debugger>,
-    _opcode_byte: u8,
-    in_cycles: usize,
-    extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-    quiet: bool,
-) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((len, in_cycles + if extra_cycle { 1 } else { 0 }))
 }

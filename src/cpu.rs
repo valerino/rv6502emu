@@ -291,9 +291,9 @@ pub struct Cpu {
 
     /// callback for the user (optional).
     cb: Option<fn(c: &mut Cpu, cb: CpuCallbackContext)>,
-    /// signal if an irq has been triggered.
+    /// set if irq() must be called within the run loop.
     pub must_trigger_irq: bool,
-    /// signal if an nmi has been triggered.
+    /// set if nmi() must be called within the run loop.
     pub must_trigger_nmi: bool,
     /// is there an intewrrupt pending ?
     irq_pending: bool,
@@ -684,6 +684,13 @@ impl Cpu {
         let dbg = debugger.unwrap_or(&mut empty_dbg);
         // push pc and p on stack
         opcodes::push_word_le(self, Some(dbg), self.regs.pc)?;
+
+        if self.cpu_type == CpuType::WDC65C02 {
+            // clear the D flag
+            // http://6502.org/tutorials/65c02opcodes.html
+            self.regs.p.set(CpuFlags::D, false);
+        }
+
         // always push P with U(ndefined) set
         // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
         let mut flags = self.regs.p.clone();
