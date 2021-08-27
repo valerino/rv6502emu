@@ -4462,6 +4462,77 @@ fn xaa<A: AddressingMode>(
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
 
+/**
+ * 65c02 only opcodes following
+ */
+
+fn bbr_bbs_internal<A: AddressingMode>(
+    c: &mut Cpu,
+    d: Option<&Debugger>,
+    _opcode_byte: u8,
+    in_cycles: usize,
+    extra_cycle_on_page_crossing: bool,
+    decode_only: bool,
+    quiet: bool,
+    bit: i8,
+    name: &str,
+    is_bbr: bool,
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+
+    if !quiet {
+        debug_out_opcode::<A>(c, name)?;
+    }
+
+    let mut taken = false;
+    if !decode_only {
+        // read operand
+        let b = A::load(c, d, tgt)?;
+
+        // get byte to test
+        let to_test = A::load(c, d, c.regs.pc.wrapping_add(1))?;
+        if is_bbr {
+            taken = (to_test & (1 << bit)) == 0;
+        } else {
+            taken = (to_test & (1 << bit)) != 0;
+        }
+        if taken {
+            // branch is taken
+            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            // check for deadlock
+            if new_pc == c.regs.pc {
+                return Err(CpuError::new_default(
+                    CpuErrorType::Deadlock,
+                    c.regs.pc,
+                    None,
+                ));
+            }
+            c.regs.pc = new_pc;
+        }
+    }
+    Ok((
+        if taken { 0 } else { A::len() },
+        in_cycles + if extra_cycle { 1 } else { 0 },
+    ))
+}
+
+/**
+ * BBR - Branch on Bit Reset
+ *
+ * This a actually a set of 8 instructions. Each tests a specific bit of a byte held on zero page and causes a branch if the bit is reset (0). For example:
+ *
+ * BBR7 VALUE, ISPOSITIVE  
+ *
+ * Processor Status after use:
+ *
+ * C	Carry Flag	Not affected
+ * Z	Zero Flag	Not affected
+ * I	Interrupt Disable	Not affected
+ * D	Decimal Mode Flag	Not affected
+ * B	Break Command	Not affected
+ * V	Overflow Flag	Not affected
+ * N	Negative Flag	Not affected
+ */
 #[named]
 fn bbr0<A: AddressingMode>(
     c: &mut Cpu,
@@ -4472,16 +4543,18 @@ fn bbr0<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        0,
+        "bbr0",
+        true,
+    )
 }
 
 #[named]
@@ -4494,16 +4567,18 @@ fn bbr1<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        1,
+        "bbr1",
+        true,
+    )
 }
 
 #[named]
@@ -4516,16 +4591,18 @@ fn bbr2<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        2,
+        "bbr2",
+        true,
+    )
 }
 
 #[named]
@@ -4538,16 +4615,18 @@ fn bbr3<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        3,
+        "bbr3",
+        true,
+    )
 }
 
 #[named]
@@ -4560,16 +4639,18 @@ fn bbr4<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        4,
+        "bbr4",
+        true,
+    )
 }
 
 #[named]
@@ -4582,16 +4663,18 @@ fn bbr5<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        5,
+        "bbr5",
+        true,
+    )
 }
 
 #[named]
@@ -4604,16 +4687,18 @@ fn bbr6<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        6,
+        "bbr6",
+        true,
+    )
 }
 
 #[named]
@@ -4626,16 +4711,18 @@ fn bbr7<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        7,
+        "bbr7",
+        true,
+    )
 }
 
 #[named]
@@ -4648,16 +4735,18 @@ fn bbs0<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        0,
+        "bbs0",
+        false,
+    )
 }
 
 #[named]
@@ -4670,16 +4759,18 @@ fn bbs1<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        1,
+        "bbs1",
+        false,
+    )
 }
 
 #[named]
@@ -4692,16 +4783,18 @@ fn bbs2<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        2,
+        "bbs2",
+        false,
+    )
 }
 
 #[named]
@@ -4714,16 +4807,18 @@ fn bbs3<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        3,
+        "bbs3",
+        false,
+    )
 }
 
 #[named]
@@ -4736,16 +4831,18 @@ fn bbs4<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        4,
+        "bbs4",
+        false,
+    )
 }
 
 #[named]
@@ -4758,16 +4855,18 @@ fn bbs5<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        5,
+        "bbs5",
+        false,
+    )
 }
 
 #[named]
@@ -4780,16 +4879,18 @@ fn bbs6<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        6,
+        "bbs6",
+        false,
+    )
 }
 
 #[named]
@@ -4802,17 +4903,18 @@ fn bbs7<A: AddressingMode>(
     decode_only: bool,
     quiet: bool,
 ) -> Result<(i8, usize), CpuError> {
-    panic!("NOT IMPLEMENTED!");
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    if !quiet {
-        debug_out_opcode::<A>(c, function_name!())?;
-    }
-    if !decode_only {
-        // read operand
-        let b = A::load(c, d, tgt)?;
-    }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    bbr_bbs_internal::<A>(
+        c,
+        d,
+        _opcode_byte,
+        in_cycles,
+        extra_cycle_on_page_crossing,
+        decode_only,
+        quiet,
+        7,
+        "bbs7",
+        false,
+    )
 }
 
 #[named]

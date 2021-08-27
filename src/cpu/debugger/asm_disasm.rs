@@ -358,7 +358,7 @@ impl Debugger {
                         res = false;
                         break 'assembler;
                     }
-                    addr = addr.wrapping_add(1 as u16);
+                    addr = addr.wrapping_add(1);
                 }
                 AddressingModeId::Abs
                 | AddressingModeId::Abx
@@ -367,7 +367,6 @@ impl Debugger {
                 | AddressingModeId::Aby
                 | AddressingModeId::Ind => {
                     if mode_id == AddressingModeId::Zpr {
-                        // TODO: implement better, correct syntax should be $xx,$yyyy where $yyyy is a PC to branch on (which translates to a signed 1-byte offset)
                         // first split $xx,$yy
                         let v: Vec<&str> = operand_s.split(',').collect();
                         let b1: u8;
@@ -432,7 +431,7 @@ impl Debugger {
                                     res = false;
                                     break 'assembler;
                                 }
-                                addr = addr.wrapping_add(2 as u16);
+                                addr = addr.wrapping_add(2);
                             }
                         };
                     }
@@ -464,7 +463,7 @@ impl Debugger {
                                 res = false;
                                 break 'assembler;
                             }
-                            addr = addr.wrapping_add(1 as u16);
+                            addr = addr.wrapping_add(1);
                         }
                     };
                 }

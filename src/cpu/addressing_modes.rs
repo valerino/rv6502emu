@@ -866,22 +866,24 @@ impl AddressingMode for AbsoluteIndirectXAddressing {
 pub(crate) struct ZeroPageRelativeAddressing;
 impl AddressingMode for ZeroPageRelativeAddressing {
     fn len() -> i8 {
-        2
+        3
     }
 
     fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let m = c.bus.get_memory();
         let b1 = m.read_byte(c.regs.pc as usize)?;
         let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
         let tgt = Self::target_address(c, false)?;
-
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[{}, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:02x}, ${:02x})\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
+            b3,
             opcode_name.to_uppercase(),
             b2,
+            b3,
             AddressingModeId::Zpr,
             tgt.0
         ))
@@ -891,8 +893,9 @@ impl AddressingMode for ZeroPageRelativeAddressing {
         c: &mut Cpu,
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, bool), CpuError> {
-        let w = c.regs.pc.wrapping_add(1);
-
+        // pc+1=byte to test
+        // pc+2=offset to branch to
+        let w = c.regs.pc.wrapping_add(2);
         Ok((w as u16, false))
     }
 }
