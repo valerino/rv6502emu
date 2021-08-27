@@ -819,8 +819,8 @@ impl AddressingMode for IndirectZeroPageAddressing {
  * The value of the X register is added to the absolute location in the instruction to form the address.
  * The 16 bit value held at this address is the final target location.
  */
-pub(crate) struct AbsoluteIndexedXAddressing;
-impl AddressingMode for AbsoluteIndexedXAddressing {
+pub(crate) struct AbsoluteIndirectXAddressing;
+impl AddressingMode for AbsoluteIndirectXAddressing {
     fn len() -> i8 {
         3
     }
