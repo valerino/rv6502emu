@@ -105,8 +105,36 @@ NOTE: all addresses/values must be hex where specified, the $ prefix is optional
 ~~~bash
 git clone <thisrepo> --recurse-submodules
 
-# will run the debugger cli
+# will run the test program in the debugger cli (will run all tests, takes ~1min with logging disabled, lot more with logging).
 cargo run
+
+❯ cargo run
+   Compiling rv6502emu v0.1.0 (/Users/valerino/repos/rv6502emu)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.27s
+     Running `target/debug/bin`
+created new cpu, type=MOS6502
+./tests/6502_65C02_functional_tests/bin_files/6502_functional_test.bin correctly loaded at $0000 !
+?:> g
+yay! PC=$3469, Klaus functional test SUCCEEDED !
+./tests/6502_65C02_functional_tests/bin_files/6502_decimal_test.bin correctly loaded at $0200 !
+yay! PC=$1001001011 hit, Bruce Clark decimal test SUCCEDED!
+./tests/6502_65C02_functional_tests/bin_files/6502_interrupt_test.bin correctly loaded at $000a !
+triggering irq !
+triggering irq !
+triggering irq !
+triggering irq !
+triggering nmi !
+triggering nmi !
+triggering nmi !
+triggering nmi !
+triggering nmi !
+triggering irq !
+triggering irq !
+triggering nmi !
+yay! PC=$06f5, Klaus interrupt test SUCCEEDED !
+setting cpu type to WDC65C02.
+./tests/6502_65C02_functional_tests/bin_files/65C02_extended_opcodes_test.bin correctly loaded at $0000 !
+yay! PC=$24f1, Klaus 65C02 extended opcodes test SUCCEEDED !
 ~~~
 
 ## status
