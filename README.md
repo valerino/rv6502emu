@@ -1,12 +1,13 @@
 # rv6502emu
 
-my toy MOS6502/WDC65C02 cpu emulator + debugger implemented as a rust crate.
+my toy MOS6502/6510/WDC65C02 cpu emulator + debugger implemented as a rust crate.
 
 > this is my testbed for learning rust, so please sorry if the code is extremely pedantic, probably overengineered (i.e. the [Bus](./src/bus.rs) and [Memory](./src/memory.rs) traits, for instance, made as such to be extensible when used in a console/computer emulator), and most important **may be implemented in a non-idiomatic way due to my current newbieness in rust :)**.<br><br>
 said that, **please note that everything (except implementation errors, of course!) is intentional**: i'm trying to experiment with different features of Rust to get a better hold of it and improve my skills.
 
 ## features
 
+- __emulates both 6502/6510 and 65C02__
 - full featured debugger: 100% (_command-line only currently_)
 - undocumented opcodes: 100%
 - disassembler : 100%
@@ -27,7 +28,7 @@ fn test_callback(_c: &mut Cpu, _cb: CpuCallbackContext) {
 }
 
 pub fn main() {
-    // create a MOS6502(default) cpu with default bus and 64k memory
+    // create a MOS6502(default, also emulates a 6510) cpu with default bus and 64k memory
     let mut c = Cpu::new_default(0x10000, Some(test_callback));
 
     // enable stdout logger
