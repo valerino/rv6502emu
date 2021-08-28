@@ -1,6 +1,6 @@
 # rv6502emu
 
-my toy MOS6502 cpu emulator + debugger implemented as a rust crate.
+my toy MOS6502/WDC65C02 cpu emulator + debugger implemented as a rust crate.
 
 > this is my testbed for learning rust, so please sorry if the code is extremely pedantic, probably overengineered (i.e. the [Bus](./src/bus.rs) and [Memory](./src/memory.rs) traits, for instance, made as such to be extensible when used in a console/computer emulator), and most important **may be implemented in a non-idiomatic way due to my current newbieness in rust :)**.<br><br>
 said that, **please note that everything (except implementation errors, of course!) is intentional**: i'm trying to experiment with different features of Rust to get a better hold of it and improve my skills.
@@ -11,7 +11,7 @@ said that, **please note that everything (except implementation errors, of cours
 - undocumented opcodes: 100%
 - disassembler : 100%
 - assembler : 100%
-- emulator : 100%, *including BCD mode for ADC/SBC*, passes **all** [Klaus (functional, decimal, interrupts)](https://github.com/Klaus2m5/6502_65C02_functional_tests) tests.
+- emulator : 100%, *including BCD mode for ADC/SBC*, passes **all** [Klaus (functional, decimal, interrupts, 65c02 extended opcodes)](https://github.com/Klaus2m5/6502_65C02_functional_tests) tests.
 
 ## usage
 
@@ -19,7 +19,7 @@ here's a [sample program](./src/bin/bin.rs) to use the emulator together with th
 
 ~~~
 use rv6502emu::cpu::debugger::Debugger;
-use rv6502emu::cpu::Cpu;
+use rv6502emu::cpu::{Cpu, CpuType};
 use rv6502emu::cpu::CpuCallbackContext;
 
 fn test_callback(_c: &mut Cpu, _cb: CpuCallbackContext) {
@@ -27,7 +27,7 @@ fn test_callback(_c: &mut Cpu, _cb: CpuCallbackContext) {
 }
 
 pub fn main() {
-    // create a cpu with default bus and 64k memory
+    // create a MOS6502(default) cpu with default bus and 64k memory
     let mut c = Cpu::new_default(0x10000, Some(test_callback));
 
     // enable stdout logger
@@ -41,6 +41,9 @@ pub fn main() {
         0,
     )
     .unwrap();
+
+    // you can also change the cpu type at runtime (it's safer to do it only just before calling reset(), either the results are unpredictable!)
+    // c.set_cpu_type(CpuType::WDC65C02);
 
     // resets the cpu (use 0x400 as custom address for the Klaus test) and start execution
     c.reset(Some(0x400)).unwrap();
@@ -76,6 +79,7 @@ debugger supported commands:
         bd <n> ................................ disable breakpoint<n>.
         bdel <n> .............................. delete breakpoint <n>.
         bc .................................... clear all breakpoints.
+        c <6502|65C02>......................... switch cpu type (warning: done after reset() may cause unpredictable results !).
         d <# instr> [$address] ................ disassemble <# instructions> at [$address], address defaults to pc.
         e <$value> [$value...] <$address> ..... write one or more <$value> bytes in memory starting at <$address>.
         g ..................................... continue execution until breakpoint or trap.
@@ -88,6 +92,7 @@ debugger supported commands:
         p ..................................... step next instruction.
         o ..................................... enable/disable show registers before the opcode, default is off (needs logging enabled).
         s <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.
+        ss .................................... show 16 stack bytes ($1f0-$1ff).
         tn .................................... trigger NMI and set PC=NMI handler.
         tq .................................... trigger IRQ and set PC=IRQ handler.
         v <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).

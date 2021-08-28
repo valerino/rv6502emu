@@ -30,8 +30,7 @@
 
 use crate::cpu::cpu_error;
 use crate::cpu::cpu_error::CpuErrorType;
-use crate::cpu::Cpu;
-use crate::cpu::CpuFlags;
+use crate::cpu::{Cpu, CpuFlags, CpuType};
 use crate::utils::*;
 use breakpoints::Bp;
 use hexplay::HexViewBuilder;
@@ -326,6 +325,7 @@ impl Debugger {
         println!("\tbd <n> ................................ disable breakpoint<n>.");
         println!("\tbdel <n> .............................. delete breakpoint <n>.");
         println!("\tbc .................................... clear all breakpoints.");
+        println!("\tc <6502|65C02>......................... switch cpu type (warning: done after reset() may cause unpredictable results !).");
         println!("\td <# instr> [$address] ................ disassemble <# instructions> at [$address], address defaults to pc.",
         );
         println!("\te <$value> [$value...] <$address> ..... write one or more <$value> bytes in memory starting at <$address>.");
@@ -344,6 +344,7 @@ impl Debugger {
         );
         println!("\ts <len> <$address> <path> ............. save <len|0=up to memory size> memory bytes starting from <$address> to file at <path>.",
         );
+        println!("\tss .................................... show 16 stack bytes ($1f0-$1ff).");
         println!("\ttn .................................... trigger NMI and set PC=NMI handler.");
         println!("\ttq .................................... trigger IRQ and set PC=IRQ handler.");
         println!("\tv <a|x|y|s|p|pc> <$value>.............. set register value, according to bitness (pc=16bit, others=8bit).");
@@ -407,6 +408,28 @@ impl Debugger {
     }
 
     /**
+     * change cpu type
+     */
+    fn cmd_switch_cpu_type(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
+        // check input
+        let t = it.next().unwrap_or_default();
+        match t.to_ascii_lowercase().as_str() {
+            "6502" => {
+                c.set_cpu_type(CpuType::MOS6502);
+                return true;
+            }
+            "65c02" => {
+                c.set_cpu_type(CpuType::WDC65C02);
+                return true;
+            }
+            _ => {
+                self.cmd_invalid();
+            }
+        }
+        return false;
+    }
+
+    /**
      * handle debugger input from stdin.
      *
      * returns a tuple with the debugger command ("q" on exit, "*"" for no-op, ...) and a boolean to indicate an error
@@ -448,6 +471,9 @@ impl Debugger {
             // assemble
             "a" => {
                 return (String::from("*"), self.cmd_assemble(c, it));
+            }
+            "c" => {
+                return (String::from("*"), self.cmd_switch_cpu_type(c, it));
             }
             "bc" => {
                 return (String::from("*"), self.cmd_clear_breakpoints());
@@ -530,6 +556,10 @@ impl Debugger {
             // save memory
             "s" => {
                 return (String::from("*"), self.cmd_dump_save_memory(c, cmd, it));
+            }
+            // show 16 stack bytes
+            "ss" => {
+                return self.parse_cmd(c, "x 16 1f0");
             }
             // trigger nmi
             "tn" => {

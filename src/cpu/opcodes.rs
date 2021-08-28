@@ -793,6 +793,7 @@ fn adc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
+    let mut cycles = in_cycles;
     if !decode_only {
         // read operand
         let b = A::load(c, d, tgt)?;
@@ -800,6 +801,11 @@ fn adc<A: AddressingMode>(
         // perform the addition (regs.a+b+C)
         let mut sum: u16;
         if c.is_cpu_flag_set(CpuFlags::D) {
+            if c.cpu_type == CpuType::WDC65C02 {
+                // one extra cycle in decimal mode
+                cycles += 1;
+            }
+
             // bcd
             sum = ((c.regs.a as u16) & 0x0f)
                 .wrapping_add((b as u16) & 0x0f)
@@ -826,7 +832,7 @@ fn adc<A: AddressingMode>(
         c.regs.a = (sum & 0xff) as u8;
         set_zn_flags(c, c.regs.a);
     }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((A::len(), cycles + if extra_cycle { 1 } else { 0 }))
 }
 
 /**
@@ -1389,8 +1395,14 @@ fn bit<A: AddressingMode>(
         let and_res = c.regs.a & b;
 
         c.set_cpu_flags(CpuFlags::Z, and_res == 0);
-        c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
-        c.set_cpu_flags(CpuFlags::V, b & 0b01000000 != 0);
+
+        // on 65c02 and immediate mode, N and V are not affected
+        if c.cpu_type == CpuType::MOS6502
+            || (c.cpu_type == CpuType::WDC65C02 && A::id() != AddressingModeId::Imm)
+        {
+            c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
+            c.set_cpu_flags(CpuFlags::V, b & 0b01000000 != 0);
+        }
     }
     Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
 }
@@ -1617,11 +1629,6 @@ fn brk<A: AddressingMode>(
     if !decode_only {
         // push pc and p on stack
         push_word_le(c, d, c.regs.pc + 2)?;
-        if c.cpu_type == CpuType::WDC65C02 {
-            // clear the D flag
-            // http://6502.org/tutorials/65c02opcodes.html
-            c.regs.p.set(CpuFlags::D, false);
-        }
 
         // push P with U and B set
         // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
@@ -1629,6 +1636,12 @@ fn brk<A: AddressingMode>(
         flags.set(CpuFlags::B, true);
         flags.set(CpuFlags::U, true);
         push_byte(c, d, flags.bits())?;
+
+        if c.cpu_type == CpuType::WDC65C02 {
+            // clear the D flag
+            // http://6502.org/tutorials/65c02opcodes.html
+            c.regs.p.set(CpuFlags::D, false);
+        }
 
         // set I
         c.set_cpu_flags(CpuFlags::I, true);
@@ -3613,6 +3626,9 @@ fn sbc<A: AddressingMode>(
     if !quiet {
         debug_out_opcode::<A>(c, function_name!())?;
     }
+
+    let mut cycles = in_cycles;
+
     if !decode_only {
         // read operand
         let b = A::load(c, d, tgt)?;
@@ -3626,6 +3642,11 @@ fn sbc<A: AddressingMode>(
         c.set_cpu_flags(CpuFlags::V, o != 0);
 
         if c.is_cpu_flag_set(CpuFlags::D) {
+            if c.cpu_type == CpuType::WDC65C02 {
+                // one extra cycle in decimal mode
+                cycles += 1;
+            }
+
             // bcd
             let mut lo: u8 = (c.regs.a & 0x0f)
                 .wrapping_sub(b & 0x0f)
@@ -3647,7 +3668,7 @@ fn sbc<A: AddressingMode>(
         c.set_cpu_flags(CpuFlags::C, sub < 0x100);
         set_zn_flags(c, c.regs.a);
     }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }))
+    Ok((A::len(), cycles + if extra_cycle { 1 } else { 0 }))
 }
 
 /**
@@ -4496,7 +4517,9 @@ fn bbr_bbs_internal<A: AddressingMode>(
         let b = A::load(c, d, tgt)?;
 
         // get byte to test
-        let to_test = A::load(c, d, c.regs.pc.wrapping_add(1))?;
+        let to_test_addr = A::load(c, d, c.regs.pc.wrapping_add(1))?;
+        let to_test = A::load(c, d, to_test_addr as u16)?;
+
         if is_bbr {
             taken = (to_test & (1 << bit)) == 0;
         } else {
@@ -4504,7 +4527,8 @@ fn bbr_bbs_internal<A: AddressingMode>(
         }
         if taken {
             // branch is taken
-            let (new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            let (mut new_pc, _) = addressing_modes::get_relative_branch_target(c.regs.pc, b);
+            new_pc = new_pc.wrapping_add(1);
             // check for deadlock
             if new_pc == c.regs.pc {
                 return Err(CpuError::new_default(
@@ -5627,10 +5651,14 @@ fn stz<A: AddressingMode>(
  *
  * The memory byte is tested to see if it contains any of the bits indicated by the value in the accumulator then the bits are reset in the memory byte.
  *
+ * TRB has the same effect on the Z flag that a BIT instruction does.
+ * Specifically, it is based on whether the result of a bitwise AND of the accumulator with the contents of the memory location specified in the operand is zero.
+ * Also, like BIT, the accumulator is not affected.
+ *
  * Processor Status after use:
  *
  * C	Carry Flag	Not affected
- * Z	Zero Flag	Set if the memory value held any of the specified bits
+ * Z	Zero Flag	set if M & A = 0
  * I	Interrupt Disable	Not affected
  * D	Decimal Mode Flag	Not affected
  * B	Break Command	Not affected
@@ -5655,7 +5683,7 @@ fn trb<A: AddressingMode>(
         // read operand
         let mut b = A::load(c, d, tgt)?;
 
-        let res = (b & c.regs.a) != 0;
+        let res = (b & c.regs.a) == 0;
         c.set_cpu_flags(CpuFlags::Z, res);
         b &= !(c.regs.a);
         A::store(c, d, tgt, b)?;
@@ -5671,10 +5699,14 @@ fn trb<A: AddressingMode>(
  *
  * The memory byte is tested to see if it contains any of the bits indicated by the value in the accumulator then the bits are set in the memory byte.
  *
+ * TSB, like TRB, has the same effect on the Z flag that a BIT instruction does.
+ * Specifically, it is based on whether the result of a bitwise AND of the accumulator with the contents of the memory location specified in the operand is zero.
+ * Also, like BIT (and TRB), the accumulator is not affected.
+ *
  * Processor Status after use:
  *
  * C	Carry Flag	Not affected
- * Z	Zero Flag	Set if the memory value held any of the specified bits
+ * Z	Zero Flag	set if M & A = 0
  * I	Interrupt Disable	Not affected
  * D	Decimal Mode Flag	Not affected
  * B	Break Command	Not affected
@@ -5698,7 +5730,7 @@ fn tsb<A: AddressingMode>(
     if !decode_only {
         // read operand
         let mut b = A::load(c, d, tgt)?;
-        let res = (b & c.regs.a) != 0;
+        let res = (b & c.regs.a) == 0;
         c.set_cpu_flags(CpuFlags::Z, res);
         b |= c.regs.a;
         A::store(c, d, tgt, b)?;

@@ -30,7 +30,7 @@
 
 use rv6502emu::cpu::debugger::Debugger;
 use rv6502emu::cpu::CpuCallbackContext;
-use rv6502emu::cpu::{Cpu, CpuOperation};
+use rv6502emu::cpu::{Cpu, CpuOperation, CpuType};
 
 static mut TEST: i8 = 0;
 
@@ -82,6 +82,13 @@ fn test_callback(c: &mut Cpu, cb: CpuCallbackContext) {
                 }
                 _ => (),
             };
+        } else if TEST == 3 && c.regs.pc == 0x24f1 && cb.operation == CpuOperation::Exec {
+            println!(
+                "yay! PC=${:04x}, Klaus 65C02 extended opcodes test SUCCEEDED !",
+                c.regs.pc
+            );
+            // done!
+            c.done = true;
         }
     }
 }
@@ -154,6 +161,33 @@ fn klaus_functional_test(c: &mut Cpu, d: Option<&mut Debugger>) {
     c.run(d, 0).unwrap();
 }
 
+/**
+ * runs the klaus functional test
+ */
+fn klaus_65c02_test(c: &mut Cpu, d: Option<&mut Debugger>) {
+    unsafe {
+        TEST = 3;
+    }
+
+    // set cpu to 65c02
+    c.set_cpu_type(CpuType::WDC65C02);
+
+    // load test to memory
+    c.bus
+        .get_memory()
+        .load(
+            "./tests/6502_65C02_functional_tests/bin_files/65C02_extended_opcodes_test.bin",
+            0,
+        )
+        .unwrap();
+
+    // resets the cpu
+    c.reset(Some(0x400)).unwrap();
+
+    // run
+    c.run(d, 0).unwrap();
+}
+
 pub fn main() {
     // create a cpu with default bus, including max addressable memory (64k)
     let mut c = Cpu::new_default(Some(test_callback));
@@ -165,4 +199,5 @@ pub fn main() {
     klaus_functional_test(&mut c, Some(&mut dbg));
     decimal_test(&mut c, Some(&mut dbg));
     interrupt_test(&mut c, Some(&mut dbg));
+    klaus_65c02_test(&mut c, Some(&mut dbg));
 }

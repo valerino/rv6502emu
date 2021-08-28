@@ -379,6 +379,7 @@ impl Cpu {
             fix_pc_rti: 0,
             cpu_type: t.unwrap_or(CpuType::MOS6502),
         };
+        println!("created new cpu, type={}", c.cpu_type);
         c
     }
 
@@ -423,6 +424,10 @@ impl Cpu {
         };
         self.cycles = 7;
         self.done = false;
+        self.irq_pending = false;
+        self.must_trigger_irq = false;
+        self.must_trigger_nmi = false;
+        self.fix_pc_rti = 0;
         Ok(())
     }
 
@@ -470,7 +475,11 @@ impl Cpu {
             // fetch
             let b = self.fetch()?;
             let (opcode_f, in_cycles, add_extra_cycle_on_page_crossing, mrk) =
-                opcodes::OPCODE_MATRIX[b as usize];
+                if self.cpu_type == CpuType::MOS6502 {
+                    opcodes::OPCODE_MATRIX[b as usize]
+                } else {
+                    opcodes::OPCODE_MATRIX_65C02[b as usize]
+                };
             if !is_error {
                 if !silence_output && dbg.show_registers_before_opcode {
                     if log_enabled() {
@@ -685,20 +694,21 @@ impl Cpu {
         // push pc and p on stack
         opcodes::push_word_le(self, Some(dbg), self.regs.pc)?;
 
+        // always push P with U(ndefined) set
+        // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
+        let mut flags = self.regs.p.clone();
+        flags.set(CpuFlags::U, true);
+        flags.set(CpuFlags::B, false);
+        opcodes::push_byte(self, Some(dbg), flags.bits())?;
+
+        // set I
+        self.set_cpu_flags(CpuFlags::I, true);
+
         if self.cpu_type == CpuType::WDC65C02 {
             // clear the D flag
             // http://6502.org/tutorials/65c02opcodes.html
             self.regs.p.set(CpuFlags::D, false);
         }
-
-        // always push P with U(ndefined) set
-        // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
-        let mut flags = self.regs.p.clone();
-        flags.set(CpuFlags::U, true);
-        opcodes::push_byte(self, Some(dbg), flags.bits())?;
-
-        // set I
-        self.set_cpu_flags(CpuFlags::I, true);
 
         // set pc to address contained at vector
         let addr = self.bus.get_memory().read_word_le(v as usize)?;
@@ -736,5 +746,15 @@ impl Cpu {
         // call callback if any
         self.call_callback(0, 0, 0, CpuOperation::Nmi);
         res
+    }
+
+    /**
+     * sets the cpu mode.
+     *
+     * > this should be called before run()!     
+     */
+    pub fn set_cpu_type(&mut self, t: CpuType) {
+        self.cpu_type = t;
+        println!("setting cpu type to {}.", self.cpu_type);
     }
 }

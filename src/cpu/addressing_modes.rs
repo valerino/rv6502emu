@@ -129,6 +129,13 @@ pub(crate) trait AddressingMode {
     }
 
     /**
+     * returns the addressing mode id enum.
+     */
+    fn id() -> AddressingModeId {
+        AddressingModeId::Imp
+    }
+
+    /**
      * string representation
      */
     fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
@@ -219,6 +226,9 @@ pub(crate) fn get_relative_branch_target(src_pc: u16, branch_offset: u8) -> (u16
  */
 pub(crate) struct AccumulatorAddressing;
 impl AddressingMode for AccumulatorAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Acc
+    }
     fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = c.bus.get_memory().read_byte(c.regs.pc as usize)?;
         Ok(format!(
@@ -253,6 +263,9 @@ impl AddressingMode for AccumulatorAddressing {
  */
 pub(crate) struct AbsoluteAddressing;
 impl AddressingMode for AbsoluteAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Abs
+    }
     fn len() -> i8 {
         3
     }
@@ -291,6 +304,9 @@ impl AddressingMode for AbsoluteAddressing {
  */
 pub(crate) struct AbsoluteXAddressing;
 impl AddressingMode for AbsoluteXAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Abx
+    }
     fn len() -> i8 {
         3
     }
@@ -338,6 +354,10 @@ impl AddressingMode for AbsoluteXAddressing {
  */
 pub(crate) struct AbsoluteYAddressing;
 impl AddressingMode for AbsoluteYAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Aby
+    }
+
     fn len() -> i8 {
         3
     }
@@ -385,6 +405,10 @@ impl AddressingMode for AbsoluteYAddressing {
  */
 pub(crate) struct ImmediateAddressing;
 impl AddressingMode for ImmediateAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Imm
+    }
+
     fn len() -> i8 {
         2
     }
@@ -420,6 +444,9 @@ impl AddressingMode for ImmediateAddressing {
  */
 pub(crate) struct ImpliedAddressing;
 impl AddressingMode for ImpliedAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Imp
+    }
     fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
         let b = c.bus.get_memory().read_byte(c.regs.pc as usize)?;
         Ok(format!(
@@ -438,6 +465,9 @@ impl AddressingMode for ImpliedAddressing {
  */
 pub(crate) struct IndirectAddressing;
 impl AddressingMode for IndirectAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Ind
+    }
     fn len() -> i8 {
         3
     }
@@ -495,6 +525,9 @@ impl AddressingMode for IndirectAddressing {
  */
 pub(crate) struct XIndirectAddressing;
 impl AddressingMode for XIndirectAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Xin
+    }
     fn len() -> i8 {
         2
     }
@@ -548,6 +581,9 @@ impl AddressingMode for XIndirectAddressing {
  */
 pub(crate) struct IndirectYAddressing;
 impl AddressingMode for IndirectYAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Iny
+    }
     fn len() -> i8 {
         2
     }
@@ -599,6 +635,9 @@ impl AddressingMode for IndirectYAddressing {
  */
 pub(crate) struct RelativeAddressing;
 impl AddressingMode for RelativeAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Rel
+    }
     fn len() -> i8 {
         2
     }
@@ -617,7 +656,7 @@ impl AddressingMode for RelativeAddressing {
             opcode_name.to_uppercase(),
             b2,
             AddressingModeId::Rel,
-            tgt.0
+            tgt.0.wrapping_sub(1)
         ))
     }
 
@@ -642,6 +681,9 @@ impl AddressingMode for RelativeAddressing {
  */
 pub(crate) struct ZeroPageAddressing;
 impl AddressingMode for ZeroPageAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Zpg
+    }
     fn len() -> i8 {
         2
     }
@@ -685,6 +727,9 @@ impl AddressingMode for ZeroPageAddressing {
  */
 pub(crate) struct ZeroPageXAddressing;
 impl AddressingMode for ZeroPageXAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Zpx
+    }
     fn len() -> i8 {
         2
     }
@@ -730,6 +775,9 @@ impl AddressingMode for ZeroPageXAddressing {
  */
 pub(crate) struct ZeroPageYAddressing;
 impl AddressingMode for ZeroPageYAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Zpy
+    }
     fn len() -> i8 {
         2
     }
@@ -775,6 +823,9 @@ impl AddressingMode for ZeroPageYAddressing {
  */
 pub(crate) struct IndirectZeroPageAddressing;
 impl AddressingMode for IndirectZeroPageAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Izp
+    }
     fn len() -> i8 {
         2
     }
@@ -821,6 +872,9 @@ impl AddressingMode for IndirectZeroPageAddressing {
  */
 pub(crate) struct AbsoluteIndirectXAddressing;
 impl AddressingMode for AbsoluteIndirectXAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Aix
+    }
     fn len() -> i8 {
         3
     }
@@ -865,6 +919,9 @@ impl AddressingMode for AbsoluteIndirectXAddressing {
  */
 pub(crate) struct ZeroPageRelativeAddressing;
 impl AddressingMode for ZeroPageRelativeAddressing {
+    fn id() -> AddressingModeId {
+        AddressingModeId::Zpr
+    }
     fn len() -> i8 {
         3
     }
@@ -874,9 +931,9 @@ impl AddressingMode for ZeroPageRelativeAddressing {
         let b1 = m.read_byte(c.regs.pc as usize)?;
         let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
         let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
+        let tgt = get_relative_branch_target(c.regs.pc, b2);
         Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:02x}, ${:02x})\t[{}, tgt=${:04x}]",
+            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:02x}, ${:02x}\t[{}, tgt=${:04x}]",
             c.regs.pc,
             b1,
             b2,
@@ -885,7 +942,7 @@ impl AddressingMode for ZeroPageRelativeAddressing {
             b2,
             b3,
             AddressingModeId::Zpr,
-            tgt.0
+            tgt.0.wrapping_sub(Self::len() as u16).wrapping_sub(2)
         ))
     }
 
