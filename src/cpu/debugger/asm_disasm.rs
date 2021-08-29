@@ -221,8 +221,8 @@ impl Debugger {
             // read asm
             print!("?a> ${:04x}: ", addr);
             io::stdout().flush().unwrap();
-            let mut full_string = String::new();
-            let _ = match io::stdin().lock().read_line(&mut full_string) {
+            let mut statement = String::new();
+            let _ = match io::stdin().lock().read_line(&mut statement) {
                 Err(_) => {
                     res = false;
                     break 'assembler;
@@ -230,13 +230,13 @@ impl Debugger {
                 Ok(_) => (),
             };
             // split opcode and operand/s
-            full_string = full_string.trim().to_ascii_lowercase();
-            if full_string.len() == 0 {
+            statement = statement.trim().to_ascii_lowercase();
+            if statement.len() == 0 {
                 // done
                 res = false;
                 break 'assembler;
             }
-            let (mut opcode, tmp) = full_string.split_once(' ').unwrap_or_default();
+            let (mut opcode, tmp) = statement.split_once(' ').unwrap_or_default();
             opcode = &opcode.trim();
 
             // also ensure there's no whitestpaces in the operands part
@@ -268,7 +268,7 @@ impl Debugger {
             } else if opcode.len() == 0 && operand_s.len() == 0 {
                 // implied
                 mode_id = AddressingModeId::Imp;
-                opcode = &full_string;
+                opcode = &statement;
             } else if operand_s.starts_with("($") && operand_s.ends_with(",x)") {
                 // absolute indirect x (65c02)
                 mode_id = AddressingModeId::Aix;

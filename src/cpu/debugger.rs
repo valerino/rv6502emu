@@ -41,6 +41,7 @@ use std::str::SplitWhitespace;
 
 mod asm_disasm;
 pub(crate) mod breakpoints;
+mod dbg_api;
 
 /**
  * exposes the debugger.
