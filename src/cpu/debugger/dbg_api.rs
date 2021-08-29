@@ -256,39 +256,6 @@ pub(crate) fn dbg_assemble_opcode(
                         ret_vec.push(a);
                     }
                 };
-
-                /*
-                // write opcode
-                let mut res = c.bus.get_memory().write_byte(addr as usize, op_byte);
-                match res {
-                    Err(e) => {
-                        return Err(e);
-                    }
-                    Ok(_) => {
-                        addr = addr.wrapping_add(1);
-                        // write zeropage address
-                        res = c.bus.get_memory().write_byte(addr as usize, b1);
-                        match res {
-                            Err(e) => {
-                                return Err(e);
-                            }
-                            Ok(_) => {
-                                addr = addr.wrapping_add(1);
-                                // write offset
-                                res = c.bus.get_memory().write_byte(addr as usize, b2);
-                                match res {
-                                    Err(e) => {
-                                        return Err(e);
-                                    }
-                                    Ok(_) => {
-                                        addr = addr.wrapping_add(1);
-                                    }
-                                };
-                            }
-                        };
-                    }
-                };
-                */
             } else {
                 // not zpr
                 let _ = match u16::from_str_radix(&operand_s[1..], 16) {
@@ -305,28 +272,6 @@ pub(crate) fn dbg_assemble_opcode(
                         // push operand as LE
                         ret_vec.push((a & 0xff) as u8);
                         ret_vec.push((a >> 8) as u8);
-                        /*
-                        // write opcode
-                        let mut res = c.bus.get_memory().write_byte(addr as usize, op_byte);
-                        match res {
-                            Err(e) => {
-                                return Err(e);
-                            }
-                            Ok(_) => {
-                                // write operand
-                                addr = addr.wrapping_add(1);
-                                res = c.bus.get_memory().write_word_le(addr as usize, a);
-                                match res {
-                                    Err(e) => {
-                                        return Err(e);
-                                    }
-                                    Ok(_) => {
-                                        addr = addr.wrapping_add(2);
-                                    }
-                                };
-                            }
-                        };
-                        */
                     }
                 };
             }
@@ -352,28 +297,6 @@ pub(crate) fn dbg_assemble_opcode(
                     ret_vec.push(op_byte);
                     // push operand
                     ret_vec.push(a);
-                    /*
-                    // write opcode
-                    let mut res = c.bus.get_memory().write_byte(addr as usize, op_byte);
-                    match res {
-                        Err(e) => {
-                            return Err(e);
-                        }
-                        Ok(_) => {
-                            // write operand
-                            addr = addr.wrapping_add(1);
-                            res = c.bus.get_memory().write_byte(addr as usize, a);
-                            match res {
-                                Err(e) => {
-                                    return Err(e);
-                                }
-                                Ok(_) => {
-                                    addr = addr.wrapping_add(1);
-                                }
-                            };
-                        }
-                    };
-                    */
                 }
             };
         }

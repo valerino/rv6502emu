@@ -149,27 +149,6 @@ impl Debugger {
     }
 
     /**
-     * find instruction in the opcode matrix
-     */
-    fn find_instruction(
-        &self,
-        t: &CpuType,
-        s: &str,
-        id: AddressingModeId,
-    ) -> Option<(&OpcodeMarker, u8)> {
-        for (i, (_, _, _, op)) in if *t == CpuType::MOS6502 {
-            opcodes::OPCODE_MATRIX.iter().enumerate()
-        } else {
-            opcodes::OPCODE_MATRIX_65C02.iter().enumerate()
-        } {
-            if op.name.eq(s) && op.id == id {
-                return Some((&op, i as u8));
-            }
-        }
-        None
-    }
-
-    /**
      * assemble instruction/s
      *
      * syntax for the assembler is taken from https://www.masswerk.at/6502/6502_instruction_set.html
@@ -218,7 +197,7 @@ impl Debugger {
         let mut prev_addr = addr;
         let mut assemble_res = true;
         loop {
-            // read asm
+            // read from stdin
             print!("?a> ${:04x}: ", addr);
             io::stdout().flush().unwrap();
             let mut statement = String::new();
@@ -227,7 +206,11 @@ impl Debugger {
                     assemble_res = false;
                     break;
                 }
-                Ok(_) => (),
+                Ok(_) => {
+                    if statement.trim().len() == 0 {
+                        break;
+                    }
+                }
             };
             match dbg_api::dbg_assemble_opcode(c, statement.as_ref(), addr) {
                 Err(e) => {
