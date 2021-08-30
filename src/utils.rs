@@ -28,8 +28,6 @@
  * SOFTWARE.
  */
 
-use crate::cpu::addressing_modes::AddressingMode;
-use crate::cpu::cpu_error::CpuError;
 use crate::cpu::opcodes::OpcodeMarker;
 use crate::cpu::opcodes::OPCODE_MATRIX;
 use crate::cpu::Cpu;
@@ -78,21 +76,6 @@ pub(crate) fn enable_logging_internal(enable: bool) {
 pub(crate) fn log_enabled() -> bool {
     log::max_level() == Level::max()
 }
-
-/**
- * display opcode string, currently implemented to stdout
- */
-pub(crate) fn debug_out_opcode<A: AddressingMode>(
-    c: &mut Cpu,
-    opcode_name: &str,
-) -> Result<(), CpuError> {
-    if log_enabled() {
-        let opc_string = A::repr(c, opcode_name)?;
-        println!("\t{}", opc_string);
-    }
-    Ok(())
-}
-
 /**
  * display registers and cycles, currently implemented to stdout
  */

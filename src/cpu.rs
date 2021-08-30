@@ -517,9 +517,8 @@ impl Cpu {
                     Some(dbg),
                     b, // the opcode byte
                     0,
-                    false,          // extra_cycle_on_page_crossing
-                    true,           // decode only
-                    silence_output, // quiet
+                    false, // extra_cycle_on_page_crossing
+                    true,  // decode only
                 ) {
                     Err(e) => {
                         println!("{}", e);
@@ -533,8 +532,11 @@ impl Cpu {
                             continue 'interpreter;
                         }
                     }
-                    Ok((a, _)) => {
-                        instr_size = a;
+                    Ok((_instr_size, _, repr)) => {
+                        instr_size = _instr_size;
+                        if !silence_output && log_enabled() {
+                            println!("\t{}", &repr);
+                        }
                     }
                 };
 
@@ -619,9 +621,8 @@ impl Cpu {
                             in_cycles,
                             add_extra_cycle_on_page_crossing,
                             false, // decode only
-                            true,  // quiet, do not print instruction again
                         ) {
-                            Ok((_instr_size, _out_cycles)) => {
+                            Ok((_instr_size, _out_cycles, _)) => {
                                 instr_size = _instr_size;
                                 opcode_cycles = _out_cycles;
                             }

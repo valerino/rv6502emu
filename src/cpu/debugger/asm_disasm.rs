@@ -28,13 +28,8 @@
  * SOFTWARE.
  */
 
-use crate::cpu::addressing_modes::AddressingModeId;
-use crate::cpu::cpu_error;
-use crate::cpu::cpu_error::CpuErrorType;
 use crate::cpu::debugger::Debugger;
-use crate::cpu::opcodes;
-use crate::cpu::opcodes::OpcodeMarker;
-use crate::cpu::{Cpu, CpuType};
+use crate::cpu::Cpu;
 use crate::utils::*;
 #[path = "./dbg_api.rs"]
 mod dbg_api;
@@ -51,7 +46,7 @@ impl Debugger {
     pub(super) fn cmd_disassemble(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         // check input
         let n_s = it.next().unwrap_or_default();
-        let n = u16::from_str_radix(&n_s, 10).unwrap_or_default();
+        let n = i32::from_str_radix(&n_s, 10).unwrap_or_default();
         let addr_s = it.next().unwrap_or_default();
         if n == 0 {
             // invalid command, missing number of instructions to decode
@@ -59,9 +54,6 @@ impl Debugger {
             return false;
         }
         let mut res = true;
-
-        // save current pc
-        let prev_pc = c.regs.pc;
         let addr: u16;
 
         // get the start address
@@ -80,96 +72,45 @@ impl Debugger {
         }
 
         // disassemble
+        let prev_pc = c.regs.pc;
         c.regs.pc = addr;
-        let mut instr_count: u16 = 0;
+        let mut instr_count: i32 = 0;
         println!("disassembling {} instructions at ${:04x}\n", n, addr);
         loop {
-            // fetch an instruction
-            let b: u8;
-            match c.fetch() {
+            match dbg_disassemble_opcode(c, c.regs.pc) {
                 Err(e) => {
                     res = false;
                     println!("{}", e);
                     break;
                 }
-                Ok(ok) => b = ok,
-            }
-            // get opcode and check access
-            let (opcode_f, _, _, mrk) = if c.cpu_type == CpuType::MOS6502 {
-                opcodes::OPCODE_MATRIX[b as usize]
-            } else {
-                opcodes::OPCODE_MATRIX_65C02[b as usize]
+                Ok((instr_size, _cycles, repr)) => {
+                    println!("\t{}", repr);
+
+                    // next
+                    instr_count = instr_count.wrapping_add(1);
+                    if instr_count == n {
+                        break;
+                    }
+                    // next instruction
+                    let (next_pc, o) = c.regs.pc.overflowing_add(instr_size as u16);
+                    if o {
+                        // overlap
+                        println!("ERROR, overlapping detected!");
+                        res = false;
+                        break;
+                    }
+                    c.regs.pc = next_pc;
+                }
             };
-
-            let instr_size: i8;
-            match cpu_error::check_opcode_boundaries(
-                c.bus.get_memory().get_size(),
-                c.regs.pc as usize,
-                mrk.id,
-                CpuErrorType::MemoryRead,
-                None,
-            ) {
-                Err(e) => {
-                    println!("{}", e);
-                    res = false;
-                    break;
-                }
-                Ok(()) => (),
-            };
-            // decode
-            match opcode_f(c, None, b, 0, false, true, false) {
-                Err(e) => {
-                    println!("{}", e);
-                    res = false;
-                    break;
-                }
-                Ok((a, _)) => instr_size = a,
-            }
-
-            // next
-            instr_count = instr_count.wrapping_add(1);
-            if instr_count == n {
-                break;
-            }
-
-            // next instruction
-            let (next_pc, o) = c.regs.pc.overflowing_add(instr_size as u16);
-            if o {
-                // overlap
-                println!("ERROR, overlapping detected!");
-                res = false;
-                break;
-            }
-            c.regs.pc = next_pc;
         }
 
-        // restore pc in the end
+        // restore pc
         c.regs.pc = prev_pc;
         return res;
     }
 
     /**
      * assemble instruction/s
-     *
-     * syntax for the assembler is taken from https://www.masswerk.at/6502/6502_instruction_set.html
-     *
-     * A	    Accumulator	        OPC A           operand is AC (implied single byte instruction)
-     * abs	    absolute	        OPC $addr	    operand is address $HHLL
-     * abs,X	absolute, X-indexed	OPC $addr,X	    operand is address; effective address is address incremented by X with carry
-     * abs,Y	absolute, Y-indexed	OPC $addr,Y	    operand is address; effective address is address incremented by Y with carry
-     * #	    immediate	        OPC #$BB	    operand is byte BB
-     * impl	    implied	            OPC	            operand implied
-     * ind	    indirect	        OPC ($addr)	    operand is address; effective address is contents of word at address: C.w($HHLL)
-     * X,ind	X-indexed, indirect	OPC ($ad,X)	    operand is zeropage address; effective address is word in (LL + X, LL + X + 1), inc. without carry: C.w($00LL + X)
-     * ind,Y	indirect, Y-indexed	OPC ($ad),Y	    operand is zeropage address; effective address is word in (LL, LL + 1) incremented by Y with carry: C.w($00LL) + Y
-     * rel	    relative	        OPC $BB         branch target is PC + signed offset BB
-     * zpg	    zeropage	        OPC $LL	        operand is zeropage address (hi-byte is zero, address = $00LL)
-     * zpg,X	zeropage, X-indexed	OPC $LL,X	    operand is zeropage address; effective address is address incremented by X without carry
-     * zpg,Y	zeropage, Y-indexed	OPC $LL,Y	    operand is zeropage address; effective address is address incremented by Y without carry
-     *
-     * for 65c02:
-     * zpr (ZeroPage relative)      OPC $ad,$BB     operand is zeropage address
-     * iax (Indirect Absolute X)    OPC ($addr,X)
      */
     pub(super) fn cmd_assemble(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         // check input
@@ -217,7 +158,7 @@ impl Debugger {
                     println!("{}", e);
                     continue;
                 }
-                Ok((v, next_addr)) => {
+                Ok(v) => {
                     // write memory and continue from the next address
                     for (i, b) in v.iter().enumerate() {
                         match c
@@ -235,7 +176,7 @@ impl Debugger {
                     }
 
                     // next
-                    addr = next_addr;
+                    addr = addr.wrapping_add(v.len() as u16);
                     if addr < prev_addr {
                         // overlap detected
                         println!("ERROR, overlapping detected!");

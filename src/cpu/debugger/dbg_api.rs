@@ -55,19 +55,82 @@ fn find_instruction(
 }
 
 /**
- * disassemble opcode at the given address, returns the opcode string and the next address on success.
+ * disassemble opcode at the given address, returns a tuple with (instr_size, cycles, opcode_string) on success.
  */
-//pub(crate) fn dbg_disassemble_opcode(c: &mut Cpu, op: &str, address: u16) -> Result<u16, CpuError> {
+pub(crate) fn dbg_disassemble_opcode(
+    c: &mut Cpu,
+    address: u16,
+) -> Result<(i8, usize, String), CpuError> {
+    // fetch the opcode byte and check access
+    let b: u8;
+    match c.fetch() {
+        Err(e) => {
+            return Err(e);
+        }
+        Ok(ok) => b = ok,
+    }
+    let (opcode_f, _, _, mrk) = if c.cpu_type == CpuType::MOS6502 {
+        opcodes::OPCODE_MATRIX[b as usize]
+    } else {
+        opcodes::OPCODE_MATRIX_65C02[b as usize]
+    };
+
+    match cpu_error::check_opcode_boundaries(
+        c.bus.get_memory().get_size(),
+        c.regs.pc as usize,
+        mrk.id,
+        CpuErrorType::MemoryRead,
+        None,
+    ) {
+        Err(e) => {
+            return Err(e);
+        }
+        Ok(()) => (),
+    };
+
+    // decode
+    let s: String;
+    let instr_size: i8;
+    let cycles: usize;
+    match opcode_f(c, None, b, 0, false, true) {
+        Err(e) => {
+            return Err(e);
+        }
+        Ok((_instr_size, _cycles, repr)) => {
+            instr_size = _instr_size;
+            s = repr;
+            cycles = _cycles;
+        }
+    };
+    Ok((instr_size, cycles, s))
+}
 
 /**
- * assemble opcode statement string at the given address, returns the assembled bytes and the next address on success.
+ * assemble opcode statement string at the given address, returns a tuple with a Vec with the instruction bytes on success.
+ *
+ * A	    Accumulator	        OPC A           operand is AC (implied single byte instruction)
+ * abs	    absolute	        OPC $addr	    operand is address $HHLL
+ * abs,X	absolute, X-indexed	OPC $addr,X	    operand is address; effective address is address incremented by X with carry
+ * abs,Y	absolute, Y-indexed	OPC $addr,Y	    operand is address; effective address is address incremented by Y with carry
+ * #	    immediate	        OPC #$BB	    operand is byte BB
+ * impl	    implied	            OPC	            operand implied
+ * ind	    indirect	        OPC ($addr)	    operand is address; effective address is contents of word at address: C.w($HHLL)
+ * X,ind	X-indexed, indirect	OPC ($ad,X)	    operand is zeropage address; effective address is word in (LL + X, LL + X + 1), inc. without carry: C.w($00LL + X)
+ * ind,Y	indirect, Y-indexed	OPC ($ad),Y	    operand is zeropage address; effective address is word in (LL, LL + 1) incremented by Y with carry: C.w($00LL) + Y
+ * rel	    relative	        OPC $BB         branch target is PC + signed offset BB
+ * zpg	    zeropage	        OPC $LL	        operand is zeropage address (hi-byte is zero, address = $00LL)
+ * zpg,X	zeropage, X-indexed	OPC $LL,X	    operand is zeropage address; effective address is address incremented by X without carry
+ * zpg,Y	zeropage, Y-indexed	OPC $LL,Y	    operand is zeropage address; effective address is address incremented by Y without carry
+ *
+ * for 65c02:
+ * zpr (ZeroPage relative)      OPC $ad,$BB     operand is zeropage address
+ * iax (Indirect Absolute X)    OPC ($addr,X)
  */
 pub(crate) fn dbg_assemble_opcode(
     c: &mut Cpu,
     op: &str,
     address: u16,
-) -> Result<(Vec<u8>, u16), CpuError> {
-    let mut addr = address;
+) -> Result<Vec<u8>, CpuError> {
     let mut ret_vec: Vec<u8> = Vec::new();
 
     // split opcode and operand/s
@@ -75,7 +138,7 @@ pub(crate) fn dbg_assemble_opcode(
     if statement.len() == 0 {
         return Err(CpuError::new_default(
             CpuErrorType::InvalidOpcode,
-            addr,
+            address,
             None,
         ));
     }
@@ -167,7 +230,7 @@ pub(crate) fn dbg_assemble_opcode(
         //println!("invalid opcode!");
         return Err(CpuError::new_default(
             CpuErrorType::InvalidOpcode,
-            addr,
+            address,
             None,
         ));
     }
@@ -175,7 +238,7 @@ pub(crate) fn dbg_assemble_opcode(
     // check access
     match cpu_error::check_opcode_boundaries(
         c.bus.get_memory().get_size(),
-        addr as usize,
+        address as usize,
         mode_id,
         CpuErrorType::MemoryWrite,
         None,
@@ -193,7 +256,7 @@ pub(crate) fn dbg_assemble_opcode(
             //println!("invalid opcode!");
             return Err(CpuError::new_default(
                 CpuErrorType::InvalidOpcode,
-                addr,
+                address,
                 None,
             ));
         }
@@ -208,14 +271,8 @@ pub(crate) fn dbg_assemble_opcode(
     // write
     match mode_id {
         AddressingModeId::Imp | AddressingModeId::Acc => {
-            let res = c.bus.get_memory().write_byte(addr as usize, op_byte);
-            match res {
-                Err(e) => {
-                    return Err(e);
-                }
-                Ok(_) => (),
-            };
-            addr = addr.wrapping_add(1);
+            // opcode only
+            ret_vec.push(op_byte);
         }
         AddressingModeId::Abs
         | AddressingModeId::Abx
@@ -227,13 +284,12 @@ pub(crate) fn dbg_assemble_opcode(
                 // first split $xx,$yy
                 let v: Vec<&str> = operand_s.split(',').collect();
                 let b1: u8;
-                let b2: u8;
                 // get bytes
                 let _ = match u8::from_str_radix(&v[0][1..], 16) {
-                    Err(e) => {
+                    Err(_) => {
                         return Err(CpuError::new_default(
                             CpuErrorType::InvalidOpcode,
-                            addr,
+                            address,
                             None,
                         ));
                     }
@@ -243,7 +299,7 @@ pub(crate) fn dbg_assemble_opcode(
                     Err(_) => {
                         return Err(CpuError::new_default(
                             CpuErrorType::InvalidOpcode,
-                            addr,
+                            address,
                             None,
                         ));
                     }
@@ -262,7 +318,7 @@ pub(crate) fn dbg_assemble_opcode(
                     Err(_) => {
                         return Err(CpuError::new_default(
                             CpuErrorType::InvalidOpcode,
-                            addr,
+                            address,
                             None,
                         ));
                     }
@@ -288,7 +344,7 @@ pub(crate) fn dbg_assemble_opcode(
                 Err(_) => {
                     return Err(CpuError::new_default(
                         CpuErrorType::InvalidOpcode,
-                        addr,
+                        address,
                         None,
                     ));
                 }
@@ -301,5 +357,5 @@ pub(crate) fn dbg_assemble_opcode(
             };
         }
     }
-    Ok((ret_vec, addr))
+    Ok(ret_vec)
 }
