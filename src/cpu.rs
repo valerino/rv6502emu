@@ -484,7 +484,7 @@ impl Cpu {
                 if !silence_output && dbg.show_registers_before_opcode {
                     if log_enabled() {
                         // show registers
-                        debug_out_registers(self);
+                        println!("\t{}, cycles={}", self.regs, self.cycles);
                     }
                 }
 
@@ -512,7 +512,7 @@ impl Cpu {
                 };
 
                 // decode
-                let _ = match opcode_f(
+                match opcode_f(
                     self,
                     Some(dbg),
                     b, // the opcode byte
@@ -532,10 +532,10 @@ impl Cpu {
                             continue 'interpreter;
                         }
                     }
-                    Ok((_instr_size, _, repr)) => {
+                    Ok((_instr_size, _, _repr)) => {
                         instr_size = _instr_size;
                         if !silence_output && log_enabled() {
-                            println!("\t{}", &repr);
+                            println!("\t{}", _repr.unwrap());
                         }
                     }
                 };
@@ -620,7 +620,7 @@ impl Cpu {
                             b, // the opcode byte
                             in_cycles,
                             add_extra_cycle_on_page_crossing,
-                            false, // decode only
+                            false, // decode only = false, will execute instruction
                         ) {
                             Ok((_instr_size, _out_cycles, _)) => {
                                 instr_size = _instr_size;

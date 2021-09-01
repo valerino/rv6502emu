@@ -62,13 +62,7 @@ pub(crate) fn dbg_disassemble_opcode(
     address: u16,
 ) -> Result<(i8, usize, String), CpuError> {
     // fetch the opcode byte and check access
-    let b: u8;
-    match c.fetch() {
-        Err(e) => {
-            return Err(e);
-        }
-        Ok(ok) => b = ok,
-    }
+    let b = c.bus.get_memory().read_byte(address as usize)?;
     let (opcode_f, _, _, mrk) = if c.cpu_type == CpuType::MOS6502 {
         opcodes::OPCODE_MATRIX[b as usize]
     } else {
@@ -89,17 +83,17 @@ pub(crate) fn dbg_disassemble_opcode(
     };
 
     // decode
-    let s: String;
     let instr_size: i8;
     let cycles: usize;
+    let s: String;
     match opcode_f(c, None, b, 0, false, true) {
         Err(e) => {
             return Err(e);
         }
-        Ok((_instr_size, _cycles, repr)) => {
+        Ok((_instr_size, _cycles, _repr)) => {
             instr_size = _instr_size;
-            s = repr;
             cycles = _cycles;
+            s = _repr.unwrap();
         }
     };
     Ok((instr_size, cycles, s))

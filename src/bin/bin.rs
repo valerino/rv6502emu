@@ -47,12 +47,12 @@ fn test_callback(c: &mut Cpu, cb: CpuCallbackContext) {
         } else if TEST == 1 && c.regs.pc == 0x24b && cb.operation == CpuOperation::Exec {
             if c.bus.get_memory().read_byte(0xb).unwrap() == 0 {
                 println!(
-                    "yay! PC=${:04b} hit, Bruce Clark decimal test SUCCEDED!",
+                    "yay! PC=${:04x} hit, Bruce Clark decimal test SUCCEDED!",
                     c.regs.pc
                 );
             } else {
                 println!(
-                    ":( PC=${:04b} hit, Bruce Clark decimal test FAILED!",
+                    ":( PC=${:04x} hit, Bruce Clark decimal test FAILED!",
                     c.regs.pc
                 );
             }

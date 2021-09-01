@@ -45,10 +45,10 @@ use std::str::SplitWhitespace;
 impl Debugger {
     pub(super) fn cmd_disassemble(&self, c: &mut Cpu, mut it: SplitWhitespace<'_>) -> bool {
         // check input
-        let n_s = it.next().unwrap_or_default();
-        let n = i32::from_str_radix(&n_s, 10).unwrap_or_default();
+        let num_instr_s = it.next().unwrap_or_default();
+        let num_instr = i32::from_str_radix(&num_instr_s, 10).unwrap_or_default();
         let addr_s = it.next().unwrap_or_default();
-        if n == 0 {
+        if num_instr == 0 {
             // invalid command, missing number of instructions to decode
             self.cmd_invalid();
             return false;
@@ -72,12 +72,14 @@ impl Debugger {
         }
 
         // disassemble
-        let prev_pc = c.regs.pc;
-        c.regs.pc = addr;
+        let mut next_addr = addr;
         let mut instr_count: i32 = 0;
-        println!("disassembling {} instructions at ${:04x}\n", n, addr);
+        println!(
+            "disassembling {} instructions at ${:04x}\n",
+            num_instr, next_addr
+        );
         loop {
-            match dbg_disassemble_opcode(c, c.regs.pc) {
+            match dbg_disassemble_opcode(c, next_addr) {
                 Err(e) => {
                     res = false;
                     println!("{}", e);
@@ -88,24 +90,21 @@ impl Debugger {
 
                     // next
                     instr_count = instr_count.wrapping_add(1);
-                    if instr_count == n {
+                    if instr_count == num_instr {
                         break;
                     }
                     // next instruction
-                    let (next_pc, o) = c.regs.pc.overflowing_add(instr_size as u16);
+                    let (na, o) = next_addr.overflowing_add(instr_size as u16);
                     if o {
                         // overlap
                         println!("ERROR, overlapping detected!");
                         res = false;
                         break;
                     }
-                    c.regs.pc = next_pc;
+                    next_addr = na;
                 }
             };
         }
-
-        // restore pc
-        c.regs.pc = prev_pc;
         return res;
     }
 
