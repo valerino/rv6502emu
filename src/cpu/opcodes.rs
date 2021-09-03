@@ -1669,6 +1669,7 @@ fn brk<A: AddressingMode>(
             None,
         ));
     }
+    c.processing_ints = true;
     c.regs.pc = addr;
     Ok((0, in_cycles, None))
 }
@@ -1912,10 +1913,6 @@ fn cli<A: AddressingMode>(
     // enable interrupts, clear the flag
     c.set_cpu_flags(CpuFlags::I, false);
 
-    if c.irq_pending {
-        // we'll trigger an irq right after
-        c.must_trigger_irq = true;
-    }
     Ok((A::len(), in_cycles, None))
 }
 
@@ -3193,12 +3190,14 @@ fn plp<A: AddressingMode>(
     // ensure flag Unused is set and B is unset
     c.set_cpu_flags(CpuFlags::B, false);
     c.set_cpu_flags(CpuFlags::U, true);
+    /*
     if c.irq_pending {
         if !c.is_cpu_flag_set(CpuFlags::I) {
             // we'll trigger an irq right after
             c.must_trigger_irq = true;
         }
     }
+    */
     Ok((A::len(), in_cycles, None))
 }
 
@@ -3468,8 +3467,10 @@ fn rti<A: AddressingMode>(
     c.regs.pc = pop_word_le(c, d)?;
 
     // apply fix if needed, and anyway reset the flag.
-    c.regs.pc = c.regs.pc.wrapping_add(c.fix_pc_rti as u16);
-    c.fix_pc_rti = 0;
+    //c.regs.pc = c.regs.pc.wrapping_add(c.fix_pc_rti as u16);
+    //c.fix_pc_rti = 0;
+    c.processing_ints = false;
+    println!("returning from RTI at pc=${:04x}", c.regs.pc);
     Ok((0, in_cycles, None))
 }
 

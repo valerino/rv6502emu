@@ -33,6 +33,48 @@ use rv6502emu::cpu::CpuCallbackContext;
 use rv6502emu::cpu::{Cpu, CpuOperation, CpuType};
 
 static mut TEST: i8 = 0;
+static TRIG_IRQ_BIT: u8 = 0;
+static TRIG_NMI_BIT: u8 = 1;
+static SRC_BRK_BIT: u8 = 0;
+static SRC_IRQ_BIT: u8 = 1;
+static SRC_NMI_BIT: u8 = 2;
+
+fn check_int_src(c: &mut Cpu, val: u8) -> (bool, bool, bool, bool) {
+    let mut must_trigger_irq = false;
+    let mut must_trigger_nmi = false;
+    let mut pending_irq = false;
+    let mut pending_nmi = false;
+
+    // get interrupt source
+    let src = c.bus.get_memory().read_byte(0x203).unwrap();
+    let v = val & 0x7f;
+    let mut is_brk = false;
+    println!("src={:02x},v={:02x},pc={:04x} !", src, v, c.regs.pc);
+
+    if (src & (1 << SRC_BRK_BIT)) != 0 {
+        println!("BRK src at pc={:04x} !", c.regs.pc);
+    }
+
+    if v & (1 << TRIG_IRQ_BIT) != 0 {
+        if src & (1 << SRC_IRQ_BIT) != 0 {
+            must_trigger_irq = true;
+        } else {
+            if src != 0 {
+                pending_irq = true;
+            }
+        }
+    }
+    if v & (1 << TRIG_NMI_BIT) != 0 {
+        if src & (1 << SRC_NMI_BIT) != 0 {
+            must_trigger_nmi = true;
+        } else {
+            if src != 0 {
+                pending_nmi = true;
+            }
+        }
+    }
+    (must_trigger_irq, must_trigger_nmi, pending_irq, pending_nmi)
+}
 
 fn test_callback(c: &mut Cpu, cb: CpuCallbackContext) {
     // check final PC for klaus functional test
@@ -58,21 +100,30 @@ fn test_callback(c: &mut Cpu, cb: CpuCallbackContext) {
             }
             // done!
             c.done = true;
-        } else if TEST == 2 && cb.operation == CpuOperation::Exec {
-            // we trigger irq/nmi at certain PC to simulate interrupts
-            // refer to tests/6502_65C02_functional_tests/bin_files/6502_interrupt_test.lst for addresses
-            match c.regs.pc {
-                0x42b | 0x45d | 0x49e | 0x4db => {
-                    c.must_trigger_irq = true;
-                }
-                0x5c7 | 0x5f9 | 0x63a | 0x677 | 0x6a7 | 0x6e4 => {
-                    c.must_trigger_nmi = true;
-                    if c.regs.pc == 0x6a7 || c.regs.pc == 0x6e4 {
-                        // also trigger irq
-                        c.must_trigger_irq = true;
+        } else if TEST == 2 {
+            if cb.operation == CpuOperation::Write && !c.processing_ints {
+                if cb.address == 0xbffc {
+                    let (trigger_irq, trigger_nmi, pending_irq, pending_nmi) =
+                        check_int_src(c, cb.value);
+                    if trigger_irq {
+                        println!("adding irq at pc={:04x} !", c.regs.pc);
+                        c.add_irq(false);
+                    }
+                    if pending_irq {
+                        println!("adding pending irq at pc={:04x} !", c.regs.pc);
+                        c.add_irq(true);
+                    }
+                    if trigger_nmi {
+                        println!("adding nmi at pc={:04x} !", c.regs.pc);
+                        c.add_nmi(false);
+                    }
+                    if pending_nmi {
+                        println!("adding pending nmi at pc={:04x} !", c.regs.pc);
+                        c.add_nmi(true);
                     }
                 }
-                0x6f5 => {
+            } else if cb.operation == CpuOperation::Exec {
+                if c.regs.pc == 0x6f5 {
                     println!(
                         "yay! PC=${:04x}, Klaus interrupt test SUCCEEDED !",
                         c.regs.pc
@@ -80,8 +131,7 @@ fn test_callback(c: &mut Cpu, cb: CpuCallbackContext) {
                     // done!
                     c.done = true;
                 }
-                _ => (),
-            };
+            }
         } else if TEST == 3 && c.regs.pc == 0x24f1 && cb.operation == CpuOperation::Exec {
             println!(
                 "yay! PC=${:04x}, Klaus 65C02 extended opcodes test SUCCEEDED !",

@@ -31,6 +31,8 @@
 use crate::bus::Bus;
 use debugger::breakpoints::BreakpointType;
 use debugger::Debugger;
+use std::sync::Arc;
+use std::sync::Mutex;
 pub(crate) mod opcodes;
 use std::fmt::{Display, Error, Formatter};
 
@@ -270,6 +272,12 @@ enum Vectors {
     IRQ = 0xfffe,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum InterruptType {
+    Irq,
+    Nmi,
+}
+
 /**
  * implements the cpu.
  */
@@ -297,10 +305,15 @@ pub struct Cpu {
     pub must_trigger_nmi: bool,
     /// is there an intewrrupt pending ?
     irq_pending: bool,
+    nmi_pending: bool,
     /// to handle interrupt return after RTI in certain situations.
     fix_pc_rti: i8,
     /// the emulated cpu type, default MOS6502.
     cpu_type: CpuType,
+    /// pending interrupts.
+    int_list: Vec<InterruptType>,
+    pending_int_list: Vec<InterruptType>,
+    pub processing_ints: bool,
 }
 
 impl Cpu {
@@ -376,8 +389,12 @@ impl Cpu {
             must_trigger_irq: false,
             must_trigger_nmi: false,
             irq_pending: false,
+            nmi_pending: false,
             fix_pc_rti: 0,
             cpu_type: t.unwrap_or(CpuType::MOS6502),
+            int_list: Vec::new(),
+            pending_int_list: Vec::new(),
+            processing_ints: false,
         };
         println!("created new cpu, type={}", c.cpu_type);
         c
@@ -456,7 +473,11 @@ impl Cpu {
      *
      * > note that reset() must be called first to set the start address !
      */
-    pub fn run(&mut self, debugger: Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
+    pub fn run_dbg(
+        &mut self,
+        debugger: Option<&mut Debugger>,
+        cycles: usize,
+    ) -> Result<(), CpuError> {
         let mut bp_rw_triggered = false;
         let mut instr_size: i8 = 0;
         // construct an empty, disabled, debugger to use when None is passed in
@@ -515,8 +536,8 @@ impl Cpu {
                 match opcode_f(
                     self,
                     Some(dbg),
-                    b, // the opcode byte
-                    0,
+                    b,     // the opcode byte
+                    0,     // in_cycles
                     false, // extra_cycle_on_page_crossing
                     true,  // decode only
                 ) {
@@ -687,6 +708,111 @@ impl Cpu {
     }
 
     /**
+     * run the cpu for the given cycles, optionally with a debugger attached.
+     *
+     * pass 0 to run indefinitely.
+     *
+     * > note that reset() must be called first to set the start address !
+     */
+    pub fn run(&mut self, debugger: Option<&mut Debugger>, cycles: usize) -> Result<(), CpuError> {
+        let mut instr_size: i8 = 0;
+        let mut opcode_cycles: usize = 0;
+        let mut run_cycles: usize = 0;
+        // loop
+        'interpreter: loop {
+            // fetch
+            let b = self.fetch()?;
+            let (opcode_f, in_cycles, add_extra_cycle_on_page_crossing, mrk) =
+                if self.cpu_type == CpuType::MOS6502 {
+                    opcodes::OPCODE_MATRIX[b as usize]
+                } else {
+                    opcodes::OPCODE_MATRIX_65C02[b as usize]
+                };
+
+            // check boundaries
+            match cpu_error::check_opcode_boundaries(
+                self.bus.get_memory().get_size(),
+                self.regs.pc as usize,
+                mrk.id,
+                CpuErrorType::MemoryRead,
+                None,
+            ) {
+                Err(e) => {
+                    println!("{}", e);
+                    // unrecoverable
+                    break 'interpreter;
+                }
+                Ok(()) => (),
+            };
+
+            // call callback if any
+            self.call_callback(self.regs.pc, 0, 0, CpuOperation::Exec);
+            // check if done has been set
+            if self.done {
+                // exiting
+                break 'interpreter;
+            }
+
+            // execute decoded instruction
+            match opcode_f(
+                self,
+                None,
+                b, // the opcode byte
+                in_cycles,
+                add_extra_cycle_on_page_crossing,
+                false, // decode only = false, will execute instruction
+            ) {
+                Ok((_instr_size, _out_cycles, _)) => {
+                    instr_size = _instr_size;
+                    opcode_cycles = _out_cycles;
+                }
+                Err(e) => {
+                    // report error and break
+                    println!("{}", e);
+                    if !self.debug {
+                        // unrecoverable
+                        break;
+                    }
+                }
+            };
+
+            // step, advance pc and increment the elapsed cycles
+            self.inc_pc(instr_size as u16, opcode_cycles);
+            run_cycles = run_cycles.wrapping_add(opcode_cycles);
+            if cycles != 0 && run_cycles >= cycles {
+                // we're done
+                break 'interpreter;
+            }
+
+            if !self.processing_ints {
+                // there's interrupts to serve
+                if !self.int_list.is_empty() {
+                    // process one interrupt
+                    if self.int_list.pop().unwrap() == InterruptType::Irq {
+                        self.irq(None);
+                    } else {
+                        self.nmi(None);
+                    }
+                    //self.fix_pc_rti = instr_size;
+                    continue 'interpreter;
+                }
+                if !self.pending_int_list.is_empty() && !self.regs.p.contains(CpuFlags::I) {
+                    // process one pending interrupts
+                    println!("processing a pending interrupt!");
+                    if self.pending_int_list.pop().unwrap() == InterruptType::Irq {
+                        self.irq(None);
+                    } else {
+                        self.nmi(None);
+                    }
+                    //self.fix_pc_rti = instr_size;
+                    continue 'interpreter;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /**
      * internal, triggers irq or nmi
      */
     fn irq_nmi(&mut self, debugger: Option<&mut Debugger>, v: u16) -> Result<(), CpuError> {
@@ -710,7 +836,7 @@ impl Cpu {
             // http://6502.org/tutorials/65c02opcodes.html
             self.regs.p.set(CpuFlags::D, false);
         }
-
+        self.processing_ints = true;
         // set pc to address contained at vector
         let addr = self.bus.get_memory().read_word_le(v as usize)?;
 
@@ -723,6 +849,9 @@ impl Cpu {
             ));
         }
         self.regs.pc = addr;
+
+        // add 7 cycles
+        self.cycles = self.cycles.wrapping_add(7);
         Ok(())
     }
 
@@ -730,23 +859,52 @@ impl Cpu {
      * triggers an irq.
      */
     pub fn irq(&mut self, debugger: Option<&mut Debugger>) -> Result<(), CpuError> {
-        println!("triggering irq !");
-        let res = self.irq_nmi(debugger, Vectors::IRQ as u16);
-        // call callback if any
-        self.call_callback(0, 0, 0, CpuOperation::Irq);
-        res
+        if !self.regs.p.contains(CpuFlags::I) {
+            println!("triggering irq, pc=${:04x}", self.regs.pc);
+            let res = self.irq_nmi(debugger, Vectors::IRQ as u16);
+            // call callback if any
+            self.call_callback(0, 0, 0, CpuOperation::Irq);
+            return res;
+        } else {
+            println!("irq() skipped, pc=${:04x}", self.regs.pc);
+            //self.regs.pc = self.regs.pc.wrapping_add(3);
+        }
+        // either, I flag is on and irq is skipped
+        Ok(())
     }
 
     /**
      * triggers an nmi.
      */
     pub fn nmi(&mut self, debugger: Option<&mut Debugger>) -> Result<(), CpuError> {
-        println!("triggering nmi !");
+        println!("triggering nmi, pc=${:04x}", self.regs.pc);
         let res = self.irq_nmi(debugger, Vectors::NMI as u16);
 
         // call callback if any
         self.call_callback(0, 0, 0, CpuOperation::Nmi);
         res
+    }
+
+    /**
+     * will trigger an irq
+     */
+    pub fn add_irq(&mut self, pending: bool) {
+        if pending {
+            self.pending_int_list.push(InterruptType::Irq);
+        } else {
+            self.int_list.push(InterruptType::Irq);
+        }
+    }
+
+    /**
+     * will trigger an irq
+     */
+    pub fn add_nmi(&mut self, pending: bool) {
+        if pending {
+            self.pending_int_list.push(InterruptType::Nmi);
+        } else {
+            self.int_list.push(InterruptType::Nmi);
+        }
     }
 
     /**
