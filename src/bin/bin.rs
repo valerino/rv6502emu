@@ -28,9 +28,9 @@
  * SOFTWARE.
  */
 
-use rv6502emu::cpu::debugger::Debugger;
 use rv6502emu::cpu::CpuCallbackContext;
 use rv6502emu::cpu::{Cpu, CpuOperation, CpuType};
+use std::time::{Duration, Instant};
 
 static mut TEST: i8 = 0;
 static TRIG_IRQ_BIT: u8 = 0;
@@ -143,7 +143,7 @@ fn test_callback(c: &mut Cpu, cb: CpuCallbackContext) {
     }
 }
 
-fn decimal_test(c: &mut Cpu, d: Option<&mut Debugger>) {
+fn decimal_test(c: &mut Cpu) {
     unsafe {
         TEST = 1;
     }
@@ -161,10 +161,10 @@ fn decimal_test(c: &mut Cpu, d: Option<&mut Debugger>) {
     c.reset(Some(0x200)).unwrap();
 
     // and run again
-    c.run(d, 0).unwrap();
+    c.run(0).unwrap();
 }
 
-fn interrupt_test(c: &mut Cpu, d: Option<&mut Debugger>) {
+fn interrupt_test(c: &mut Cpu) {
     unsafe {
         TEST = 2;
     }
@@ -180,17 +180,14 @@ fn interrupt_test(c: &mut Cpu, d: Option<&mut Debugger>) {
 
     // resets to $400
     c.reset(Some(0x400)).unwrap();
-    let mut empty_dbg = Debugger::new(false);
-    let dbg = d.unwrap_or(&mut empty_dbg);
-
     // and run
-    c.run(Some(dbg), 0).unwrap();
+    c.run(0).unwrap();
 }
 
 /**
  * runs the klaus functional test
  */
-fn klaus_functional_test(c: &mut Cpu, d: Option<&mut Debugger>) {
+fn klaus_functional_test(c: &mut Cpu) {
     unsafe {
         TEST = 0;
     }
@@ -208,13 +205,13 @@ fn klaus_functional_test(c: &mut Cpu, d: Option<&mut Debugger>) {
     c.reset(Some(0x400)).unwrap();
 
     // run
-    c.run(d, 0).unwrap();
+    c.run(0).unwrap();
 }
 
 /**
  * runs the klaus functional test
  */
-fn klaus_65c02_test(c: &mut Cpu, d: Option<&mut Debugger>) {
+fn klaus_65c02_test(c: &mut Cpu) {
     unsafe {
         TEST = 3;
     }
@@ -235,19 +232,37 @@ fn klaus_65c02_test(c: &mut Cpu, d: Option<&mut Debugger>) {
     c.reset(Some(0x400)).unwrap();
 
     // run
-    c.run(d, 0).unwrap();
+    c.run(0).unwrap();
 }
 
 pub fn main() {
     // create a cpu with default bus, including max addressable memory (64k)
     let mut c = Cpu::new_default(Some(test_callback));
     c.enable_logging(false);
-    // create a debugger
-    let mut dbg = Debugger::new(true);
 
-    // run tests
-    //klaus_functional_test(&mut c, Some(&mut dbg));
-    //decimal_test(&mut c, Some(&mut dbg));
-    interrupt_test(&mut c, Some(&mut dbg));
-    //klaus_65c02_test(&mut c, Some(&mut dbg));
+    // functional test
+    let mut start: Instant;
+    let mut duration: Duration;
+    start = Instant::now();
+    klaus_functional_test(&mut c);
+    duration = start.elapsed();
+    println!("klaus functional test took {:?}", duration);
+
+    // decimal test
+    start = Instant::now();
+    decimal_test(&mut c);
+    duration = start.elapsed();
+    println!("decimal test took {:?}", duration);
+
+    // interrupt
+    start = Instant::now();
+    interrupt_test(&mut c);
+    duration = start.elapsed();
+    println!("interrupt test took {:?}", duration);
+
+    // 65c02 extended opcodes
+    start = Instant::now();
+    klaus_65c02_test(&mut c);
+    duration = start.elapsed();
+    println!("65c02 test took {:?}", duration);
 }

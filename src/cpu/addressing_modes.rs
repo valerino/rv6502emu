@@ -29,9 +29,6 @@
  */
 
 use crate::cpu::cpu_error::CpuError;
-use crate::cpu::debugger::breakpoints::BreakpointType;
-use crate::cpu::debugger::Debugger;
-use crate::cpu::opcodes::{OPCODE_MATRIX, OPCODE_MATRIX_65C02};
 use crate::cpu::{Cpu, CpuOperation, CpuType};
 use crate::utils;
 use std::fmt::Display;
@@ -133,14 +130,14 @@ pub(crate) trait AddressingMode {
     fn len() -> i8;
 
     /**
-     * the operand.
+     * the operand at PC+1.
      */
     fn operand(c: &mut Cpu) -> Result<u16, CpuError>;
 
     /**
-     * fetch the opcode target address depending on the addressing mode, returns a tuple with (address, effective cycles including page crossing))
+     * fetch the opcode target depending on the addressing mode, returns a tuple with (address, effective cycles including page crossing))
      */
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -149,18 +146,19 @@ pub(crate) trait AddressingMode {
     /**
      * load byte from address
      */
-    fn load(c: &mut Cpu, d: Option<&Debugger>, address: u16) -> Result<u8, CpuError> {
+    fn load(c: &mut Cpu, address: u16) -> Result<u8, CpuError> {
         let m = c.bus.get_memory();
 
         // read
         let b = m.read_byte(address as usize)?;
 
+        /*
         // check if a breakpoint has to be triggered
         if d.is_some() {
             d.unwrap()
                 .handle_rw_breakpoint(c, address, BreakpointType::READ)?
         }
-
+        */
         // call callback if any
         c.call_callback(address, b, 1, CpuOperation::Read);
         Ok(b)
@@ -169,18 +167,19 @@ pub(crate) trait AddressingMode {
     /**
      * store byte to address
      */
-    fn store(c: &mut Cpu, d: Option<&Debugger>, address: u16, b: u8) -> Result<(), CpuError> {
+    fn store(c: &mut Cpu, address: u16, b: u8) -> Result<(), CpuError> {
         let m = c.bus.get_memory();
 
         // write
         m.write_byte(address as usize, b)?;
 
+        /*
         // check if a breakpoint has to be triggered
         if d.is_some() {
             d.unwrap()
                 .handle_rw_breakpoint(c, address, BreakpointType::WRITE)?
         }
-
+        */
         // call callback if any
         c.call_callback(address, b, 1, CpuOperation::Write);
         Ok(())
@@ -227,22 +226,22 @@ impl AddressingMode for AccumulatorAddressing {
     fn len() -> i8 {
         1
     }
-    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+    fn operand(_c: &mut Cpu) -> Result<u16, CpuError> {
         // no operand, implied (A)
         Ok(0)
     }
-    fn target_address(
-        c: &mut Cpu,
+    fn target(
+        _c: &mut Cpu,
         in_cycles: usize,
         _add_extra_cycle_on_page_crossing: bool,
     ) -> Result<(u16, usize), CpuError> {
         Ok((0, in_cycles))
     }
 
-    fn load(c: &mut Cpu, _d: Option<&Debugger>, _address: u16) -> Result<u8, CpuError> {
+    fn load(c: &mut Cpu, __address: u16) -> Result<u8, CpuError> {
         Ok(c.regs.a)
     }
-    fn store(c: &mut Cpu, _d: Option<&Debugger>, _address: u16, b: u8) -> Result<(), CpuError> {
+    fn store(c: &mut Cpu, __address: u16, b: u8) -> Result<(), CpuError> {
         c.regs.a = b;
         Ok(())
     }
@@ -269,7 +268,7 @@ impl AddressingMode for AbsoluteAddressing {
         Ok(w)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         _add_extra_cycle_on_page_crossing: bool,
@@ -300,7 +299,7 @@ impl AddressingMode for AbsoluteXAddressing {
         Ok(w)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -338,7 +337,7 @@ impl AddressingMode for AbsoluteYAddressing {
         Ok(w)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -376,7 +375,7 @@ impl AddressingMode for ImmediateAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -403,7 +402,7 @@ impl AddressingMode for ImpliedAddressing {
         Ok(0)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -434,7 +433,7 @@ impl AddressingMode for IndirectAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -485,7 +484,7 @@ impl AddressingMode for XIndirectAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -533,7 +532,7 @@ impl AddressingMode for IndirectYAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -580,7 +579,7 @@ impl AddressingMode for RelativeAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -618,7 +617,7 @@ impl AddressingMode for ZeroPageAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -656,7 +655,7 @@ impl AddressingMode for ZeroPageXAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -696,7 +695,7 @@ impl AddressingMode for ZeroPageYAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -736,7 +735,7 @@ impl AddressingMode for IndirectZeroPageAddressing {
         Ok(w as u16)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -777,7 +776,7 @@ impl AddressingMode for AbsoluteIndirectXAddressing {
         Ok(w)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
@@ -818,7 +817,7 @@ impl AddressingMode for ZeroPageRelativeAddressing {
         Ok(w)
     }
 
-    fn target_address(
+    fn target(
         c: &mut Cpu,
         in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
