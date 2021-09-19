@@ -29,74 +29,130 @@
  */
 
 use crate::cpu::addressing_modes::AddressingModeId;
+use crate::cpu::addressing_modes::*;
 use crate::cpu::cpu_error::{self, CpuError, CpuErrorType};
 use crate::cpu::opcodes;
-use crate::cpu::opcodes::OpcodeMarker;
 use crate::cpu::{Cpu, CpuType};
 
 /**
- * find instruction in the opcode matrix
+ * get opcode information from opcode byte at addr.
+ *
+ *
+ * returns a tuple with (instr_size, cycles including extra, opcode name, operand string, operand, addressing mode, target address)
  */
-fn find_instruction(
-    t: &CpuType,
-    s: &str,
-    id: AddressingModeId,
-) -> Option<(&'static OpcodeMarker, u8)> {
-    for (i, (_, _, _, mrk)) in if *t == CpuType::MOS6502 {
-        opcodes::OPCODE_MATRIX.iter().enumerate()
+fn get_opcode_info(
+    c: &mut Cpu,
+    addr: u16,
+) -> Result<(i8, usize, String, String, u16, AddressingModeId, u16), CpuError> {
+    let b = c.bus.get_memory().read_byte(addr as usize)?;
+    // fetch the opcode
+    let (_, cycles, has_extra_cycle_on_page_crossing, name, id) = if c.cpu_type == CpuType::MOS6502
+    {
+        OPCODE_MATRIX[opcode_byte as usize]
     } else {
-        opcodes::OPCODE_MATRIX_65C02.iter().enumerate()
-    } {
-        if mrk.name.eq(s) && mrk.id == id {
-            return Some((&mrk, i as u8));
+        OPCODE_MATRIX_65C02[opcode_byte as usize]
+    };
+
+    let (tgt_addr, cyc) = A::target_address(c, cycles, has_extra_cycle_on_page_crossing)?;
+    let op_string: String;
+    let tgt_addr: u16;
+    let cycles_total: u16;
+    let instr_len: i8;
+    let op: u16;
+    match id {
+        AddressingModeId::Acc => {
+            op_string = String::from("");
+            let op = A::operand(c)?;
+        }
+        AddressingModeId::Abs => {
+            op_string = format!("${:04x}", op);
+        }
+        AddressingModeId::Abx => {
+            op_string = format!("${:04x},X", op);
+        }
+        AddressingModeId::Aby => {
+            op_string = format!("${:04x},Y", op);
+        }
+        AddressingModeId::Aix => {
+            op_string = format!("(${:04x},X)", op);
+        }
+        AddressingModeId::Imm => {
+            op_string = format!("#${:02x}", op);
+        }
+        AddressingModeId::Imp => {
+            op_string = String::from("");
+        }
+        AddressingModeId::Ind => {
+            op_string = format!("(${:04x})", op);
+        }
+        AddressingModeId::Izp => {
+            op_string = format!("(${:02x})", op);
+        }
+        AddressingModeId::Xin => {
+            op_string = format!("(${:02x},X)", op);
+        }
+        AddressingModeId::Iny => {
+            op_string = format!("(${:02x}),Y", op);
+        }
+        AddressingModeId::Rel => {
+            op_string = format!("${:04x}", op);
+        }
+        AddressingModeId::Zpg => {
+            op_string = format!("${:02x}", op);
+        }
+        AddressingModeId::Zpx => {
+            op_string = format!("${:02x},X", op);
+        }
+        AddressingModeId::Zpy => {
+            op_string = format!("${:02x},Y", op);
+        }
+        AddressingModeId::Zpr => {
+            // pc+1=byte to test
+            // pc+2=pc-relative offset to branch to
+            let b1: u16 = op >> 8;
+            let b2: u16 = op & 0xff;
+            op_string = format!("${:02x},${:04x}", b1, b2);
         }
     }
-    None
+
+    Ok((
+        A::len(),
+        cyc,
+        String::from(name).to_uppercase(),
+        op_string,
+        op,
+        id,
+        tgt_addr,
+    ))
 }
 
 /**
- * disassemble opcode at the given address, returns a tuple with (instr_size, cycles, opcode_string) on success.
+ * disassemble opcode at the given address,
+ * returns a tuple with (instr_size, cycles including extra, opcode name, operand string, operand, addressing mode, target address)
  */
 pub(crate) fn dbg_disassemble_opcode(
     c: &mut Cpu,
     address: u16,
-) -> Result<(i8, usize, String), CpuError> {
-    // fetch the opcode byte and check access
+) -> Result<(i8, usize, String, String, u16, AddressingModeId, u16), CpuError> {
+    // fetch the opcode byte and get infos
     let b = c.bus.get_memory().read_byte(address as usize)?;
-    let (opcode_f, _, _, mrk) = if c.cpu_type == CpuType::MOS6502 {
-        opcodes::OPCODE_MATRIX[b as usize]
+    opcodes::get_opcode_info(c, b)
+}
+
+/**
+ * find instruction in the opcode matrix, return the index if found
+ */
+fn find_instruction(t: CpuType, s: &str, id: AddressingModeId) -> Option<usize> {
+    for (i, (_f, _cycles, _extra, name, addr_mode)) in if t == CpuType::MOS6502 {
+        opcodes::OPCODE_MATRIX.iter().enumerate()
     } else {
-        opcodes::OPCODE_MATRIX_65C02[b as usize]
-    };
-
-    match cpu_error::check_opcode_boundaries(
-        c.bus.get_memory().get_size(),
-        c.regs.pc as usize,
-        mrk.id,
-        CpuErrorType::MemoryRead,
-        None,
-    ) {
-        Err(e) => {
-            return Err(e);
+        opcodes::OPCODE_MATRIX_65C02.iter().enumerate()
+    } {
+        if *addr_mode == id && *name == s {
+            return Some(i);
         }
-        Ok(()) => (),
-    };
-
-    // decode
-    let instr_size: i8;
-    let cycles: usize;
-    let s: String;
-    match opcode_f(c, None, b, 0, false, true) {
-        Err(e) => {
-            return Err(e);
-        }
-        Ok((_instr_size, _cycles, _repr)) => {
-            instr_size = _instr_size;
-            cycles = _cycles;
-            s = _repr.unwrap();
-        }
-    };
-    Ok((instr_size, cycles, s))
+    }
+    None
 }
 
 /**
@@ -245,7 +301,7 @@ pub(crate) fn dbg_assemble_opcode(
 
     // find a match in the opcode matrix
     let op_byte: u8;
-    let _ = match find_instruction(&c.cpu_type, &opcode, mode_id) {
+    let _ = match find_instruction(c.cpu_type, opcode, mode_id) {
         None => {
             //println!("invalid opcode!");
             return Err(CpuError::new_default(
@@ -254,7 +310,7 @@ pub(crate) fn dbg_assemble_opcode(
                 None,
             ));
         }
-        Some((_, idx)) => op_byte = idx,
+        Some(idx) => op_byte = idx as u8,
     };
 
     /*println!(

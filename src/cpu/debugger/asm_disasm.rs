@@ -37,6 +37,13 @@ use dbg_api::*;
 use std::io;
 use std::io::{BufRead, Write};
 
+/*
+ * disassemble opcode at the given address, returns a tuple with (instr_size, cycles including extra, name, addressing mode, operand, target address) on success.
+pub(crate) fn dbg_disassemble_opcode(
+    c: &mut Cpu,
+    address: u16,
+) -> Result<(i8, usize, String, AddressingModeId, u16, u16), CpuError> {
+*/
 /**
  * disassemble n instructions at the given address
  */
@@ -85,8 +92,9 @@ impl Debugger {
                     println!("{}", e);
                     break;
                 }
-                Ok((instr_size, _cycles, repr)) => {
-                    println!("\t{}", repr);
+                Ok((instr_size, _cycles, name, id, operand, tgt_addr)) => {
+                    // build proper string for the addressing mode
+                    println!("\t{} ", repr);
 
                     // next
                     instr_count = instr_count.wrapping_add(1);

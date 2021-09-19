@@ -246,8 +246,8 @@ pub fn main() {
     let mut dbg = Debugger::new(true);
 
     // run tests
-    klaus_functional_test(&mut c, Some(&mut dbg));
-    decimal_test(&mut c, Some(&mut dbg));
+    //klaus_functional_test(&mut c, Some(&mut dbg));
+    //decimal_test(&mut c, Some(&mut dbg));
     interrupt_test(&mut c, Some(&mut dbg));
-    klaus_65c02_test(&mut c, Some(&mut dbg));
+    //klaus_65c02_test(&mut c, Some(&mut dbg));
 }

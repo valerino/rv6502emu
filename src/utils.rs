@@ -28,8 +28,6 @@
  * SOFTWARE.
  */
 
-use crate::cpu::opcodes::OpcodeMarker;
-use crate::cpu::opcodes::OPCODE_MATRIX;
 use crate::cpu::Cpu;
 use log::*;
 
@@ -81,44 +79,4 @@ pub(crate) fn log_enabled() -> bool {
  */
 pub(crate) fn debug_out_registers(c: &Cpu) {
     println!("\t{}, cycles={}", c.regs, c.cycles);
-}
-
-/**
- * prints the opcode table, for debugging ....
- */
-#[allow(dead_code)]
-pub fn debug_out_opcode_table() {
-    let mut c = 0;
-    for (i, item) in OPCODE_MATRIX.iter().enumerate() {
-        let mrk: OpcodeMarker = item.3;
-
-        print!(
-            "{}0x{:02x}={}({})",
-            if i & 0xf == 2
-                || i & 0xf == 3
-                || i & 0xf == 4
-                || i & 0xf == 7
-                || i & 0xf == 0xb
-                || i & 0xf == 0xc
-                || i & 0xf == 0xf
-            {
-                // indicates specific 65c02 opcode, or change to standard 6502 opcode in 65c02
-                // http://6502.org/tutorials/65c02opcodes.html
-                "**"
-            } else {
-                ""
-            },
-            i,
-            mrk.name,
-            mrk.id
-        );
-        if c == 15 {
-            print!("\n");
-            c = 0;
-        } else {
-            print!(",");
-            c += 1;
-        }
-    }
-    print!("\n");
 }

@@ -31,6 +31,7 @@
 use crate::cpu::cpu_error::CpuError;
 use crate::cpu::debugger::breakpoints::BreakpointType;
 use crate::cpu::debugger::Debugger;
+use crate::cpu::opcodes::{OPCODE_MATRIX, OPCODE_MATRIX_65C02};
 use crate::cpu::{Cpu, CpuOperation, CpuType};
 use crate::utils;
 use std::fmt::Display;
@@ -122,35 +123,28 @@ impl Display for AddressingModeId {
  */
 pub(crate) trait AddressingMode {
     /**
-     * the instruction size
+     * the addressing mode.
      */
-    fn len() -> i8 {
-        1
-    }
+    fn id() -> AddressingModeId;
 
     /**
-     * returns the addressing mode id enum.
+     * instruction size.
      */
-    fn id() -> AddressingModeId {
-        AddressingModeId::Imp
-    }
+    fn len() -> i8;
 
     /**
-     * string representation
+     * the operand.
      */
-    fn repr(_c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        Ok(String::from(opcode_name.to_uppercase()))
-    }
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError>;
 
     /**
-     * fetch the opcode target address depending on the addressing mode, returns a tuple with (address, extra_cycle_if_page_crossed))
+     * fetch the opcode target address depending on the addressing mode, returns a tuple with (address, effective cycles including page crossing))
      */
     fn target_address(
-        _c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
-        Ok((0, false))
-    }
+        c: &mut Cpu,
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError>;
 
     /**
      * load byte from address
@@ -229,23 +223,20 @@ impl AddressingMode for AccumulatorAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Acc
     }
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let b = c.bus.get_memory().read_byte(c.regs.pc as usize)?;
-        Ok(format!(
-            "${:04x}:\t{:02x}\t\t-->\t{} A\t[{}])",
-            c.regs.pc,
-            b,
-            opcode_name.to_uppercase(),
-            AddressingModeId::Acc
-        ))
-    }
 
+    fn len() -> i8 {
+        1
+    }
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        // no operand, implied (A)
+        Ok(0)
+    }
     fn target_address(
-        _c: &mut Cpu,
+        c: &mut Cpu,
+        in_cycles: usize,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
-        // implied A
-        Ok((0, false))
+    ) -> Result<(u16, usize), CpuError> {
+        Ok((0, in_cycles))
     }
 
     fn load(c: &mut Cpu, _d: Option<&Debugger>, _address: u16) -> Result<u8, CpuError> {
@@ -266,36 +257,25 @@ impl AddressingMode for AbsoluteAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Abs
     }
+
     fn len() -> i8 {
         3
     }
-
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            b3,
-            opcode_name.to_uppercase(),
-            (((b3 as u16) << 8) | (b2 as u16)),
-            AddressingModeId::Abs,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_word_le((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w)
     }
 
     fn target_address(
         c: &mut Cpu,
+        in_cycles: usize,
         _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
-        let w = c.bus.get_memory().read_word_le((c.regs.pc + 1) as usize)?;
-
-        Ok((w, false))
+    ) -> Result<(u16, usize), CpuError> {
+        let w = Self::operand(c)?;
+        Ok((w, in_cycles))
     }
 }
 
@@ -307,45 +287,33 @@ impl AddressingMode for AbsoluteXAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Abx
     }
+
     fn len() -> i8 {
         3
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, X\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            b3,
-            opcode_name.to_uppercase(),
-            (((b3 as u16) << 8) | (b2 as u16)),
-            AddressingModeId::Abx,
-            tgt.0
-        ))
-    }
-
-    fn target_address(
-        c: &mut Cpu,
-        add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
         let w = c
             .bus
             .get_memory()
             .read_word_le((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w)
+    }
+
+    fn target_address(
+        c: &mut Cpu,
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
+        let w = Self::operand(c)?;
         let ww = w.wrapping_add(c.regs.x as u16);
 
         // check for page crossing, in case we need to add a cycle
         if add_extra_cycle_on_page_crossing && is_page_cross(w, ww) {
-            return Ok((ww, true));
+            return Ok((ww, in_cycles + 1));
         }
 
-        Ok((ww, false))
+        Ok((ww, in_cycles))
     }
 }
 
@@ -362,41 +330,28 @@ impl AddressingMode for AbsoluteYAddressing {
         3
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:04x}, Y\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            b3,
-            opcode_name.to_uppercase(),
-            (((b3 as u16) << 8) | (b2 as u16)),
-            AddressingModeId::Aby,
-            tgt.0
-        ))
-    }
-
-    fn target_address(
-        c: &mut Cpu,
-        add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
         let w = c
             .bus
             .get_memory()
             .read_word_le((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w)
+    }
+
+    fn target_address(
+        c: &mut Cpu,
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
+        let w = Self::operand(c)?;
         let ww = w.wrapping_add(c.regs.y as u16);
 
         // check for page crossing, in case we need to add a cycle
         if add_extra_cycle_on_page_crossing && is_page_cross(w, ww) {
-            return Ok((ww, true));
+            return Ok((ww, in_cycles + 1));
         }
 
-        Ok((ww, false))
+        Ok((ww, in_cycles))
     }
 }
 
@@ -413,29 +368,21 @@ impl AddressingMode for ImmediateAddressing {
         2
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} #${:02x}\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            opcode_name.to_uppercase(),
-            b2,
-            AddressingModeId::Imm,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         let w = c.regs.pc.wrapping_add(1);
-        Ok((w as u16, false))
+        Ok((w, in_cycles))
     }
 }
 
@@ -447,15 +394,21 @@ impl AddressingMode for ImpliedAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Imp
     }
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let b = c.bus.get_memory().read_byte(c.regs.pc as usize)?;
-        Ok(format!(
-            "${:04x}:\t{:02x}\t\t-->\t{}\t\t[{}]",
-            c.regs.pc,
-            b,
-            opcode_name.to_uppercase(),
-            AddressingModeId::Imp
-        ))
+
+    fn len() -> i8 {
+        1
+    }
+
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        Ok(0)
+    }
+
+    fn target_address(
+        c: &mut Cpu,
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
+        Ok((0, in_cycles))
     }
 }
 
@@ -468,33 +421,24 @@ impl AddressingMode for IndirectAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Ind
     }
+
     fn len() -> i8 {
         3
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} (${:04x})\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            b3,
-            opcode_name.to_uppercase(),
-            (((b3 as u16) << 8) | (b2 as u16)),
-            AddressingModeId::Ind,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_word_le((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         // read address
         let w = c.bus.get_memory().read_word_le((c.regs.pc + 1) as usize)?;
 
@@ -511,7 +455,7 @@ impl AddressingMode for IndirectAddressing {
             ww = c.bus.get_memory().read_word_le(w as usize)?;
         }
 
-        Ok((ww, false))
+        Ok((ww, in_cycles))
     }
 }
 
@@ -528,32 +472,24 @@ impl AddressingMode for XIndirectAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Xin
     }
+
     fn len() -> i8 {
         2
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}, X)\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            opcode_name.to_uppercase(),
-            b2,
-            AddressingModeId::Xin,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         // read address in zeropage
         let mut w = c
             .bus
@@ -564,7 +500,7 @@ impl AddressingMode for XIndirectAddressing {
         w = w.wrapping_add(c.regs.x);
         let ww = c.bus.get_memory().read_word_le(w as usize)?;
 
-        Ok((ww, false))
+        Ok((ww, in_cycles))
     }
 }
 
@@ -584,31 +520,24 @@ impl AddressingMode for IndirectYAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Iny
     }
+
     fn len() -> i8 {
         2
     }
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
 
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x}), Y\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            opcode_name.to_uppercase(),
-            b2 as u8,
-            AddressingModeId::Iny,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
+        in_cycles: usize,
         add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+    ) -> Result<(u16, usize), CpuError> {
         // read address contained at address in the zeropage
         let w = c
             .bus
@@ -621,10 +550,10 @@ impl AddressingMode for IndirectYAddressing {
 
         // check for page crossing, in case we need to add a cycle
         if add_extra_cycle_on_page_crossing && is_page_cross(ww, addr_plus_y) {
-            return Ok((addr_plus_y, true));
+            return Ok((addr_plus_y, in_cycles + 1));
         }
 
-        Ok((addr_plus_y, false))
+        Ok((addr_plus_y, in_cycles))
     }
 }
 
@@ -638,38 +567,30 @@ impl AddressingMode for RelativeAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Rel
     }
+
     fn len() -> i8 {
         2
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            opcode_name.to_uppercase(),
-            b2,
-            AddressingModeId::Rel,
-            tgt.0.wrapping_sub(1)
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         let w = c.regs.pc.wrapping_add(1);
 
         // this will check for page crossing too (check mandatory in relative addressing)
         let (_, cross) =
             get_relative_branch_target(c.regs.pc, c.bus.get_memory().read_byte(w as usize)?);
-        Ok((w as u16, cross))
+        Ok((w as u16, in_cycles + (cross as usize)))
     }
 }
 
@@ -684,39 +605,31 @@ impl AddressingMode for ZeroPageAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Zpg
     }
+
     fn len() -> i8 {
         2
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}\t\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            opcode_name.to_uppercase(),
-            b2,
-            AddressingModeId::Zpg,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         // read address in the zeropage
         let w = c
             .bus
             .get_memory()
             .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
 
-        Ok((w as u16, false))
+        Ok((w as u16, in_cycles))
     }
 }
 
@@ -730,32 +643,24 @@ impl AddressingMode for ZeroPageXAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Zpx
     }
+
     fn len() -> i8 {
         2
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, X\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            opcode_name.to_uppercase(),
-            b2,
-            AddressingModeId::Zpx,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         // read address in the zeropage
         let w = c
             .bus
@@ -764,7 +669,7 @@ impl AddressingMode for ZeroPageXAddressing {
 
         // and add x, wrapping
         let w = w.wrapping_add(c.regs.x);
-        Ok((w as u16, false))
+        Ok((w as u16, in_cycles))
     }
 }
 
@@ -778,32 +683,24 @@ impl AddressingMode for ZeroPageYAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Zpy
     }
+
     fn len() -> i8 {
         2
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} ${:02x}, Y\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            opcode_name.to_uppercase(),
-            b2,
-            AddressingModeId::Zpy,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         // read address in the zeropage
         let w = c
             .bus
@@ -812,7 +709,7 @@ impl AddressingMode for ZeroPageYAddressing {
 
         // and add y, wrapping
         let w = w.wrapping_add(c.regs.y);
-        Ok((w as u16, false))
+        Ok((w as u16, in_cycles))
     }
 }
 
@@ -826,32 +723,24 @@ impl AddressingMode for IndirectZeroPageAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Izp
     }
+
     fn len() -> i8 {
         2
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x}\t\t-->\t{} (${:02x})\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            opcode_name.to_uppercase(),
-            b2,
-            AddressingModeId::Izp,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w as u16)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         // read address in the zeropage
         let w = c
             .bus
@@ -860,7 +749,7 @@ impl AddressingMode for IndirectZeroPageAddressing {
 
         // read address indirect
         let ww = c.bus.get_memory().read_word_le(w as usize)?;
-        Ok((ww as u16, false))
+        Ok((ww as u16, in_cycles))
     }
 }
 
@@ -875,40 +764,31 @@ impl AddressingMode for AbsoluteIndirectXAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Aix
     }
+
     fn len() -> i8 {
         3
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
-        let tgt = Self::target_address(c, false)?;
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} (${:04x}, X)\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            b3,
-            opcode_name.to_uppercase(),
-            (((b3 as u16) << 8) | (b2 as u16)),
-            AddressingModeId::Aix,
-            tgt.0
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        let w = c
+            .bus
+            .get_memory()
+            .read_word_le((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         let w = c
             .bus
             .get_memory()
             .read_word_le((c.regs.pc.wrapping_add(1)) as usize)?;
         let ww = w.wrapping_add(c.regs.x as u16);
         let www = c.bus.get_memory().read_word_le(ww as usize)?;
-        Ok((www, false))
+        Ok((www, in_cycles))
     }
 }
 
@@ -922,37 +802,30 @@ impl AddressingMode for ZeroPageRelativeAddressing {
     fn id() -> AddressingModeId {
         AddressingModeId::Zpr
     }
+
     fn len() -> i8 {
         3
     }
 
-    fn repr(c: &mut Cpu, opcode_name: &str) -> Result<String, CpuError> {
-        let m = c.bus.get_memory();
-        let b1 = m.read_byte(c.regs.pc as usize)?;
-        let b2 = m.read_byte((c.regs.pc.wrapping_add(1)) as usize)?;
-        let b3 = m.read_byte((c.regs.pc.wrapping_add(2)) as usize)?;
-        let tgt = get_relative_branch_target(c.regs.pc, b2);
-        Ok(format!(
-            "${:04x}:\t{:02x} {:02x} {:02x}\t-->\t{} ${:02x}, ${:02x}\t[{}, tgt=${:04x}]",
-            c.regs.pc,
-            b1,
-            b2,
-            b3,
-            opcode_name.to_uppercase(),
-            b2,
-            b3,
-            AddressingModeId::Zpr,
-            tgt.0.wrapping_sub(Self::len() as u16).wrapping_sub(2)
-        ))
+    fn operand(c: &mut Cpu) -> Result<u16, CpuError> {
+        // this must be treated as
+        // hi=zeropage address
+        // lo=offset
+        let w = c
+            .bus
+            .get_memory()
+            .read_word_le((c.regs.pc.wrapping_add(1)) as usize)?;
+        Ok(w)
     }
 
     fn target_address(
         c: &mut Cpu,
-        _add_extra_cycle_on_page_crossing: bool,
-    ) -> Result<(u16, bool), CpuError> {
+        in_cycles: usize,
+        add_extra_cycle_on_page_crossing: bool,
+    ) -> Result<(u16, usize), CpuError> {
         // pc+1=byte to test
-        // pc+2=offset to branch to
+        // pc+2=pc-relative offset to branch to
         let w = c.regs.pc.wrapping_add(2);
-        Ok((w as u16, false))
+        Ok((w as u16, in_cycles))
     }
 }

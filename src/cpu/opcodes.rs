@@ -40,29 +40,13 @@ use crate::utils;
 use ::function_name::named;
 use lazy_static::*;
 
-/**
- * holds opcode information for assembler/disassembler
- */
-#[derive(Clone, Debug, Copy)]
-pub(crate) struct OpcodeMarker {
-    /// opcode name
-    pub(crate) name: &'static str,
-
-    /// addressing mode
-    pub(crate) id: AddressingModeId,
-}
-
 lazy_static! {
 /**
  * the 6502 256 opcodes table (includes undocumented)
  *
- * each opcode gets in input a reference to the Cpu, a reference to the Debugger, the cycles needed to execute the opcode, a boolean to indicate if, on crossing page boundaries, an extra cycles must be added,
- * a boolean to indicate decoding only (no execution, for the disassembler).
- * returns a tuple with the instruction size and the effective elapsed cycles (may include the aferomentioned additional cycle).
- *
  * for clarity, each Vec element is a tuple defined as this (each element is named including return values):
  *
- * (< fn(c: &mut Cpu, d: Option<&Debugger>, opcode_byte: u8, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool) -> Result<(instr_size:i8, out_cycles:usize, repr:Option<String>), CpuError>, d: Option<& Debugger>, in_cycles: usize, add_extra_cycle:bool, mrk: OpcodeMarker) >)
+ * (< fn(c: &mut Cpu, d: Option<&Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool) -> Result<(instr_size:i8, effective_cycles:usize), CpuError>, in_cycles: usize, add_extra_cycle:bool, opcode_name: &'static str, addressing_mode: AddressingModeId) >)
  *
  * all the opcodes info are taken from, in no particular order :
  *
@@ -73,589 +57,628 @@ lazy_static! {
  * - http://www.obelisk.me.uk/6502/reference.html (WARNING: ASL, LSR, ROL, ROR info is wrong! flag Z is set when RESULT=0, not when A=0. i fixed this in functions comments.)
  * - [https://csdb.dk/release/?id=198357](NMOS 6510 Unintended Opcodes)
  */
-pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, opcode_byte: u8, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool) -> Result<(i8, usize, Option<String>), CpuError>, usize, bool, OpcodeMarker)> =
+
+pub(crate) static ref OPCODE_MATRIX: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool) -> Result<(i8, usize), CpuError>, usize, bool, &'static str, AddressingModeId)> =
     vec![
         // 0x0 - 0xf
-        (brk::<ImpliedAddressing>, 7, false, OpcodeMarker{ name: "brk", id: Imp}),
-        (ora::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "ora", id: Xin}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (slo::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "slo", id: Xin}),
-        (nop::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "nop", id: Zpg}),
-        (ora::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ora", id: Zpg}),
-        (asl::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "asl", id: Zpg}),
-        (slo::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "slo", id: Zpg}),
-        (php::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "php", id: Imp}),
-        (ora::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ora", id: Imm}),
-        (asl::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "asl", id: Acc}),
-        (anc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "anc", id: Imm}),
-        (nop::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Abs}),
-        (ora::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ora", id: Abs}),
-        (asl::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "asl", id: Abs}),
-        (slo::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "slo", id: Abs}),
+        (brk::<ImpliedAddressing>, 7, false, "brk",Imp),
+        (ora::<XIndirectAddressing>, 6, false, "ora",Xin),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (slo::<XIndirectAddressing>, 8, false, "slo",Xin),
+        (nop::<ZeroPageAddressing>, 3, false, "nop",Zpg),
+        (ora::<ZeroPageAddressing>, 3, false, "ora",Zpg),
+        (asl::<ZeroPageAddressing>, 5, false, "asl",Zpg),
+        (slo::<ZeroPageAddressing>, 5, false, "slo",Zpg),
+        (php::<ImpliedAddressing>, 3, false, "php",Imp),
+        (ora::<ImmediateAddressing>, 2, false, "ora",Imm),
+        (asl::<AccumulatorAddressing>, 2, false, "asl",Acc),
+        (anc::<ImmediateAddressing>, 2, false, "anc",Imm),
+        (nop::<AbsoluteAddressing>, 4, false, "nop",Abs),
+        (ora::<AbsoluteAddressing>, 4, false, "ora",Abs),
+        (asl::<AbsoluteAddressing>, 6, false, "asl",Abs),
+        (slo::<AbsoluteAddressing>, 6, false, "slo",Abs),
 
         // 0x10 - 0x1f
-        (bpl::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bpl", id: Rel}),
-        (ora::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "ora", id: Iny}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (slo::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "slo", id: Iny}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (ora::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "ora", id: Zpx}),
-        (asl::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "asl", id: Zpx}),
-        (slo::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "slo", id: Zpx}),
-        (clc::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "clc", id: Imp}),
-        (ora::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "ora", id: Aby}),
-        (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (slo::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "slo", id: Aby}),
-        (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}),
-        (ora::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "ora", id: Abx}),
-        (asl::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "asl", id: Abx}),
-        (slo::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "slo", id: Abx}),
+        (bpl::<RelativeAddressing>, 2, true, "bpl",Rel),
+        (ora::<IndirectYAddressing>, 5, true, "ora",Iny),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (slo::<IndirectYAddressing>, 8, false, "slo",Iny),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (ora::<ZeroPageXAddressing>, 4, false, "ora",Zpx),
+        (asl::<ZeroPageXAddressing>, 6, false, "asl",Zpx),
+        (slo::<ZeroPageXAddressing>, 6, false, "slo",Zpx),
+        (clc::<ImpliedAddressing>, 2, false, "clc",Imp),
+        (ora::<AbsoluteYAddressing>, 4, true, "ora",Aby),
+        (nop::<ImpliedAddressing>, 2, false, "nop",Imp),
+        (slo::<AbsoluteYAddressing>, 7, false, "slo",Aby),
+        (nop::<AbsoluteXAddressing>, 4, true, "nop",Abx),
+        (ora::<AbsoluteXAddressing>, 4, true, "ora",Abx),
+        (asl::<AbsoluteXAddressing>, 7, false, "asl",Abx),
+        (slo::<AbsoluteXAddressing>, 7, false, "slo",Abx),
 
         // 0x20 - 0x2f
-        (jsr::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "jsr", id: Abs}),
-        (and::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "and", id: Xin}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (rla::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "rla", id: Xin}),
-        (bit::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "bit", id: Zpg}),
-        (and::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "and", id: Zpg}),
-        (rol::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rol", id: Zpg}),
-        (rla::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rla", id: Zpg}),
-        (plp::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "plp", id: Imp}),
-        (and::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "and", id: Imm}),
-        (rol::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "rol", id: Acc}),
-        (anc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "anc", id: Imm}),
-        (bit::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "bit", id: Abs}),
-        (and::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "and", id: Abs}),
-        (rol::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "rol", id: Abs}),
-        (rla::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "rla", id: Abs}),
+        (jsr::<AbsoluteAddressing>, 6, false, "jsr",Abs),
+        (and::<XIndirectAddressing>, 6, false, "and",Xin),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (rla::<XIndirectAddressing>, 8, false, "rla",Xin),
+        (bit::<ZeroPageAddressing>, 3, false, "bit",Zpg),
+        (and::<ZeroPageAddressing>, 3, false, "and",Zpg),
+        (rol::<ZeroPageAddressing>, 5, false, "rol",Zpg),
+        (rla::<ZeroPageAddressing>, 5, false, "rla",Zpg),
+        (plp::<ImpliedAddressing>, 4, false, "plp",Imp),
+        (and::<ImmediateAddressing>, 2, false, "and",Imm),
+        (rol::<AccumulatorAddressing>, 2, false, "rol",Acc),
+        (anc::<ImmediateAddressing>, 2, false, "anc",Imm),
+        (bit::<AbsoluteAddressing>, 4, false, "bit",Abs),
+        (and::<AbsoluteAddressing>, 4, false, "and",Abs),
+        (rol::<AbsoluteAddressing>, 6, false, "rol",Abs),
+        (rla::<AbsoluteAddressing>, 6, false, "rla",Abs),
 
         // 0x30 - 0x3f
-        (bmi::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bmi", id: Rel}),
-        (and::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "and", id: Iny}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (rla::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "rla", id: Iny}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (and::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "and", id: Zpx}),
-        (rol::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "rol", id: Zpx}),
-        (rla::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "rla", id: Zpx}),
-        (sec::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sec", id: Imp}),
-        (and::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "and", id: Aby}),
-        (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (rla::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "rla", id: Aby}),
-        (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}),
-        (and::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "and", id: Abx}),
-        (rol::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "rol", id: Abx}),
-        (rla::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "rla", id: Abx}),
+        (bmi::<RelativeAddressing>, 2, true, "bmi",Rel),
+        (and::<IndirectYAddressing>, 5, true, "and",Iny),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (rla::<IndirectYAddressing>, 8, false, "rla",Iny),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (and::<ZeroPageXAddressing>, 4, false, "and",Zpx),
+        (rol::<ZeroPageXAddressing>, 6, false, "rol",Zpx),
+        (rla::<ZeroPageXAddressing>, 6, false, "rla",Zpx),
+        (sec::<ImpliedAddressing>, 2, false, "sec",Imp),
+        (and::<AbsoluteYAddressing>, 4, true, "and",Aby),
+        (nop::<ImpliedAddressing>, 2, false, "nop",Imp),
+        (rla::<AbsoluteYAddressing>, 7, false, "rla",Aby),
+        (nop::<AbsoluteXAddressing>, 4, true, "nop",Abx),
+        (and::<AbsoluteXAddressing>, 4, true, "and",Abx),
+        (rol::<AbsoluteXAddressing>, 7, false, "rol",Abx),
+        (rla::<AbsoluteXAddressing>, 7, false, "rla",Abx),
 
         // 0x40 - 0x4f
-        (rti::<ImpliedAddressing>, 6, false, OpcodeMarker{ name: "rti", id: Imp}),
-        (eor::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "eor", id: Xin}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (sre::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "sre", id: Xin}),
-        (nop::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "nop", id: Zpg}),
-        (eor::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "eor", id: Zpg}),
-        (lsr::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "lsr", id: Zpg}),
-        (sre::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "sre", id: Zpg}),
-        (pha::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "pha", id: Imp}),
-        (eor::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "eor", id: Imm}),
-        (lsr::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "lsr", id: Acc}),
-        (alr::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "alr", id: Imm}),
-        (jmp::<AbsoluteAddressing>, 3, false, OpcodeMarker{ name: "jmp", id: Abs}),
-        (eor::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "eor", id: Abs}),
-        (lsr::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Abs}),
-        (sre::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "sre", id: Abs}),
+        (rti::<ImpliedAddressing>, 6, false, "rti",Imp),
+        (eor::<XIndirectAddressing>, 6, false, "eor",Xin),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (sre::<XIndirectAddressing>, 8, false, "sre",Xin),
+        (nop::<ZeroPageAddressing>, 3, false, "nop",Zpg),
+        (eor::<ZeroPageAddressing>, 3, false, "eor",Zpg),
+        (lsr::<ZeroPageAddressing>, 5, false, "lsr",Zpg),
+        (sre::<ZeroPageAddressing>, 5, false, "sre",Zpg),
+        (pha::<ImpliedAddressing>, 3, false, "pha",Imp),
+        (eor::<ImmediateAddressing>, 2, false, "eor",Imm),
+        (lsr::<AccumulatorAddressing>, 2, false, "lsr",Acc),
+        (alr::<ImmediateAddressing>, 2, false, "alr",Imm),
+        (jmp::<AbsoluteAddressing>, 3, false, "jmp",Abs),
+        (eor::<AbsoluteAddressing>, 4, false, "eor",Abs),
+        (lsr::<AbsoluteAddressing>, 6, false, "lsr",Abs),
+        (sre::<AbsoluteAddressing>, 6, false, "sre",Abs),
 
         // 0x50 - 0x5f
-        (bvc::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bvc", id: Rel}),
-        (eor::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "eor", id: Iny}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (sre::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "sre", id: Iny}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (eor::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "eor", id: Zpx}),
-        (lsr::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Zpx}),
-        (sre::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "sre", id: Zpx}),
-        (cli::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "cli", id: Imp}),
-        (eor::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Aby}),
-        (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (sre::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "sre", id: Aby}),
-        (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}),
-        (eor::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Abx}),
-        (lsr::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "lsr", id: Abx}),
-        (sre::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "sre", id: Abx}),
+        (bvc::<RelativeAddressing>, 2, true, "bvc",Rel),
+        (eor::<IndirectYAddressing>, 5, true, "eor",Iny),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (sre::<IndirectYAddressing>, 8, false, "sre",Iny),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (eor::<ZeroPageXAddressing>, 4, false, "eor",Zpx),
+        (lsr::<ZeroPageXAddressing>, 6, false, "lsr",Zpx),
+        (sre::<ZeroPageXAddressing>, 6, false, "sre",Zpx),
+        (cli::<ImpliedAddressing>, 2, false, "cli",Imp),
+        (eor::<AbsoluteYAddressing>, 4, true, "eor",Aby),
+        (nop::<ImpliedAddressing>, 2, false, "nop",Imp),
+        (sre::<AbsoluteYAddressing>, 7, false, "sre",Aby),
+        (nop::<AbsoluteXAddressing>, 4, true, "nop",Abx),
+        (eor::<AbsoluteXAddressing>, 4, true, "eor",Abx),
+        (lsr::<AbsoluteXAddressing>, 7, false, "lsr",Abx),
+        (sre::<AbsoluteXAddressing>, 7, false, "sre",Abx),
 
         // 0x60 - 0x6f
-        (rts::<ImpliedAddressing>, 6, false, OpcodeMarker{ name: "rts", id: Imp}),
-        (adc::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "adc", id: Xin}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (rra::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "rra", id: Xin}),
-        (nop::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "nop", id: Zpg}),
-        (adc::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "adc", id: Zpg}),
-        (ror::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "ror", id: Zpg}),
-        (rra::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rra", id: Zpg}),
-        (pla::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "pla", id: Imp}),
-        (adc::<ImmediateAddressing>, 2, true, OpcodeMarker{ name: "adc", id: Imm}),
-        (ror::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "ror", id: Acc}),
-        (arr::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "arr", id: Imm}),
-        (jmp::<IndirectAddressing>, 5, false, OpcodeMarker{ name: "jmp", id: Ind}),
-        (adc::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "adc", id: Abs}),
-        (ror::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "ror", id: Abs}),
-        (rra::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "rra", id: Abs}),
+        (rts::<ImpliedAddressing>, 6, false, "rts",Imp),
+        (adc::<XIndirectAddressing>, 6, false, "adc",Xin),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (rra::<XIndirectAddressing>, 8, false, "rra",Xin),
+        (nop::<ZeroPageAddressing>, 3, false, "nop",Zpg),
+        (adc::<ZeroPageAddressing>, 3, false, "adc",Zpg),
+        (ror::<ZeroPageAddressing>, 5, false, "ror",Zpg),
+        (rra::<ZeroPageAddressing>, 5, false, "rra",Zpg),
+        (pla::<ImpliedAddressing>, 4, false, "pla",Imp),
+        (adc::<ImmediateAddressing>, 2, true, "adc",Imm),
+        (ror::<AccumulatorAddressing>, 2, false, "ror",Acc),
+        (arr::<ImmediateAddressing>, 2, false, "arr",Imm),
+        (jmp::<IndirectAddressing>, 5, false, "jmp",Ind),
+        (adc::<AbsoluteAddressing>, 4, false, "adc",Abs),
+        (ror::<AbsoluteAddressing>, 6, false, "ror",Abs),
+        (rra::<AbsoluteAddressing>, 6, false, "rra",Abs),
 
         // 0x70 - 0x7f
-        (bvs::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bvs", id: Rel}),
-        (adc::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "adc", id: Iny}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (rra::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "rra", id: Iny}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (adc::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "adc", id: Zpx}),
-        (ror::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "ror", id: Zpx}),
-        (rra::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "rra", id: Zpx}),
-        (sei::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sei", id: Imp}),
-        (adc::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "adc", id: Aby}),
-        (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (rra::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "rra", id: Aby}),
-        (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}),
-        (adc::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "adc", id: Abx}),
-        (ror::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "ror", id: Abx}),
-        (rra::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "rra", id: Abx}),
+        (bvs::<RelativeAddressing>, 2, true, "bvs",Rel),
+        (adc::<IndirectYAddressing>, 5, true, "adc",Iny),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (rra::<IndirectYAddressing>, 8, false, "rra",Iny),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (adc::<ZeroPageXAddressing>, 4, false, "adc",Zpx),
+        (ror::<ZeroPageXAddressing>, 6, false, "ror",Zpx),
+        (rra::<ZeroPageXAddressing>, 6, false, "rra",Zpx),
+        (sei::<ImpliedAddressing>, 2, false, "sei",Imp),
+        (adc::<AbsoluteYAddressing>, 4, true, "adc",Aby),
+        (nop::<ImpliedAddressing>, 2, false, "nop",Imp),
+        (rra::<AbsoluteYAddressing>, 7, false, "rra",Aby),
+        (nop::<AbsoluteXAddressing>, 4, true, "nop",Abx),
+        (adc::<AbsoluteXAddressing>, 4, true, "adc",Abx),
+        (ror::<AbsoluteXAddressing>, 7, false, "ror",Abx),
+        (rra::<AbsoluteXAddressing>, 7, false, "rra",Abx),
 
         // 0x80 - 0x8f
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (sta::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "sta", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (sax::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "sax", id: Xin}),
-        (sty::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sty", id: Zpg}),
-        (sta::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sta", id: Zpg}),
-        (stx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "stx", id: Zpg}),
-        (sax::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sax", id: Zpg}),
-        (dey::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "dey", id: Imp}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (txa::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "txa", id: Imp}),
-        (xaa::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "xaa", id: Imm}),
-        (sty::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sty", id: Abs}),
-        (sta::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sta", id: Abs}),
-        (stx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "stx", id: Abs}),
-        (sax::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sax", id: Abs}),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (sta::<XIndirectAddressing>, 6, false, "sta",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (sax::<XIndirectAddressing>, 6, false, "sax",Xin),
+        (sty::<ZeroPageAddressing>, 3, false, "sty",Zpg),
+        (sta::<ZeroPageAddressing>, 3, false, "sta",Zpg),
+        (stx::<ZeroPageAddressing>, 3, false, "stx",Zpg),
+        (sax::<ZeroPageAddressing>, 3, false, "sax",Zpg),
+        (dey::<ImpliedAddressing>, 2, false, "dey",Imp),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (txa::<ImpliedAddressing>, 2, false, "txa",Imp),
+        (xaa::<ImmediateAddressing>, 2, false, "xaa",Imm),
+        (sty::<AbsoluteAddressing>, 4, false, "sty",Abs),
+        (sta::<AbsoluteAddressing>, 4, false, "sta",Abs),
+        (stx::<AbsoluteAddressing>, 4, false, "stx",Abs),
+        (sax::<AbsoluteAddressing>, 4, false, "sax",Abs),
 
         // 0x90 - 0x9f
-        (bcc::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bcc", id: Rel}),
-        (sta::<IndirectYAddressing>, 6, false, OpcodeMarker{ name: "sta", id: Iny}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (ahx::<IndirectYAddressing>, 6, false, OpcodeMarker{ name: "ahx", id: Iny}),
-        (sty::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sty", id: Zpx}),
-        (sta::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sta", id: Zpx}),
-        (stx::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "stx", id: Zpy}),
-        (sax::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "sax", id: Zpy}),
-        (tya::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tya", id: Imp}),
-        (sta::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "sta", id: Aby}),
-        (txs::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "txs", id: Imp}),
-        (tas::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "tas", id: Aby}),
-        (shy::<AbsoluteXAddressing>, 5, false, OpcodeMarker{ name: "shy", id: Abx}),
-        (sta::<AbsoluteXAddressing>, 5, false, OpcodeMarker{ name: "sta", id: Abx}),
-        (shx::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "shx", id: Aby}),
-        (ahx::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "ahx", id: Aby}),
+        (bcc::<RelativeAddressing>, 2, true, "bcc",Rel),
+        (sta::<IndirectYAddressing>, 6, false, "sta",Iny),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (ahx::<IndirectYAddressing>, 6, false, "ahx",Iny),
+        (sty::<ZeroPageXAddressing>, 4, false, "sty",Zpx),
+        (sta::<ZeroPageXAddressing>, 4, false, "sta",Zpx),
+        (stx::<ZeroPageYAddressing>, 4, false, "stx",Zpy),
+        (sax::<ZeroPageYAddressing>, 4, false, "sax",Zpy),
+        (tya::<ImpliedAddressing>, 2, false, "tya",Imp),
+        (sta::<AbsoluteYAddressing>, 5, false, "sta",Aby),
+        (txs::<ImpliedAddressing>, 2, false, "txs",Imp),
+        (tas::<AbsoluteYAddressing>, 5, false, "tas",Aby),
+        (shy::<AbsoluteXAddressing>, 5, false, "shy",Abx),
+        (sta::<AbsoluteXAddressing>, 5, false, "sta",Abx),
+        (shx::<AbsoluteYAddressing>, 5, false, "shx",Aby),
+        (ahx::<AbsoluteYAddressing>, 5, false, "ahx",Aby),
 
         // 0xa0 - 0xaf
-        (ldy::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ldy", id: Imm}),
-        (lda::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "lda", id: Xin}),
-        (ldx::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ldx", id: Imm}),
-        (lax::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "lax", id: Xin}),
-        (ldy::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ldy", id: Zpg}),
-        (lda::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "lda", id: Zpg}),
-        (ldx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ldx", id: Zpg}),
-        (lax::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "lax", id: Zpg}),
-        (tay::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tay", id: Imp}),
-        (lda::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "lda", id: Imm}),
-        (tax::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tax", id: Imp}),
-        (lax::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "lxa", id: Imm}),
-        (ldy::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ldy", id: Abs}),
-        (lda::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "lda", id: Abs}),
-        (ldx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ldx", id: Abs}),
-        (lax::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "lax", id: Abs}),
+        (ldy::<ImmediateAddressing>, 2, false, "ldy",Imm),
+        (lda::<XIndirectAddressing>, 6, false, "lda",Xin),
+        (ldx::<ImmediateAddressing>, 2, false, "ldx",Imm),
+        (lax::<XIndirectAddressing>, 6, false, "lax",Xin),
+        (ldy::<ZeroPageAddressing>, 3, false, "ldy",Zpg),
+        (lda::<ZeroPageAddressing>, 3, false, "lda",Zpg),
+        (ldx::<ZeroPageAddressing>, 3, false, "ldx",Zpg),
+        (lax::<ZeroPageAddressing>, 3, false, "lax",Zpg),
+        (tay::<ImpliedAddressing>, 2, false, "tay",Imp),
+        (lda::<ImmediateAddressing>, 2, false, "lda",Imm),
+        (tax::<ImpliedAddressing>, 2, false, "tax",Imp),
+        (lax::<ImmediateAddressing>, 2, false, "lxa",Imm),
+        (ldy::<AbsoluteAddressing>, 4, false, "ldy",Abs),
+        (lda::<AbsoluteAddressing>, 4, false, "lda",Abs),
+        (ldx::<AbsoluteAddressing>, 4, false, "ldx",Abs),
+        (lax::<AbsoluteAddressing>, 4, false, "lax",Abs),
 
         // 0xb0 - 0xbf
-        (bcs::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bcs", id: Rel}),
-        (lda::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "lda", id: Iny}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (lax::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "lax", id: Iny}),
-        (ldy::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "ldy", id: Zpx}),
-        (lda::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "lda", id: Zpx}),
-        (ldx::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "ldx", id: Zpy}),
-        (lax::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "lax", id: Zpy}),
-        (clv::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "clv", id: Imp}),
-        (lda::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "lda", id: Aby}),
-        (tsx::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tsx", id: Imp}),
-        (las::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "las", id: Aby}),
-        (ldy::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "ldy", id: Abx}),
-        (lda::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "lda", id: Abx}),
-        (ldx::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "ldx", id: Aby}),
-        (lax::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "lax", id: Aby}),
+        (bcs::<RelativeAddressing>, 2, true, "bcs",Rel),
+        (lda::<IndirectYAddressing>, 5, true, "lda",Iny),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (lax::<IndirectYAddressing>, 5, true, "lax",Iny),
+        (ldy::<ZeroPageXAddressing>, 4, false, "ldy",Zpx),
+        (lda::<ZeroPageXAddressing>, 4, false, "lda",Zpx),
+        (ldx::<ZeroPageYAddressing>, 4, false, "ldx",Zpy),
+        (lax::<ZeroPageYAddressing>, 4, false, "lax",Zpy),
+        (clv::<ImpliedAddressing>, 2, false, "clv",Imp),
+        (lda::<AbsoluteYAddressing>, 4, true, "lda",Aby),
+        (tsx::<ImpliedAddressing>, 2, false, "tsx",Imp),
+        (las::<AbsoluteYAddressing>, 4, true, "las",Aby),
+        (ldy::<AbsoluteXAddressing>, 4, true, "ldy",Abx),
+        (lda::<AbsoluteXAddressing>, 4, true, "lda",Abx),
+        (ldx::<AbsoluteYAddressing>, 4, true, "ldx",Aby),
+        (lax::<AbsoluteYAddressing>, 4, true, "lax",Aby),
 
         // 0xc0 - 0xcf
-        (cpy::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cpy", id: Imm}),
-        (cmp::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "cmp", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (dcp::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "dcp", id: Xin}),
-        (cpy::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cpy", id: Zpg}),
-        (cmp::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cmp", id: Zpg}),
-        (dec::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "dec", id: Zpg}),
-        (dcp::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "dcp", id: Zpg}),
-        (iny::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "iny", id: Imp}),
-        (cmp::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cmp", id: Imm}),
-        (dex::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "dex", id: Imp}),
-        (sbx::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "sbx", id: Imm}),
-        (cpy::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cpy", id: Abs}),
-        (cmp::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cmp", id: Abs}),
-        (dec::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "dec", id: Abs}),
-        (dcp::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "dcp", id: Abs}),
+        (cpy::<ImmediateAddressing>, 2, false, "cpy",Imm),
+        (cmp::<XIndirectAddressing>, 6, false, "cmp",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (dcp::<XIndirectAddressing>, 8, false, "dcp",Xin),
+        (cpy::<ZeroPageAddressing>, 3, false, "cpy",Zpg),
+        (cmp::<ZeroPageAddressing>, 3, false, "cmp",Zpg),
+        (dec::<ZeroPageAddressing>, 5, false, "dec",Zpg),
+        (dcp::<ZeroPageAddressing>, 5, false, "dcp",Zpg),
+        (iny::<ImpliedAddressing>, 2, false, "iny",Imp),
+        (cmp::<ImmediateAddressing>, 2, false, "cmp",Imm),
+        (dex::<ImpliedAddressing>, 2, false, "dex",Imp),
+        (sbx::<ImmediateAddressing>, 2, false, "sbx",Imm),
+        (cpy::<AbsoluteAddressing>, 4, false, "cpy",Abs),
+        (cmp::<AbsoluteAddressing>, 4, false, "cmp",Abs),
+        (dec::<AbsoluteAddressing>, 6, false, "dec",Abs),
+        (dcp::<AbsoluteAddressing>, 6, false, "dcp",Abs),
 
         // 0xd0 - 0xdf
-        (bne::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bne", id: Rel}),
-        (cmp::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "cmp", id: Iny}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (dcp::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "dcp", id: Iny}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (cmp::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "cmp", id: Zpx}),
-        (dec::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "dec", id: Zpx}),
-        (dcp::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "dcp", id: Zpx}),
-        (cld::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "cld", id: Imp}),
-        (cmp::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "cmp", id: Aby}),
-        (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (dcp::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "dcp", id: Aby}),
-        (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}),
-        (cmp::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "cmp", id: Abx}),
-        (dec::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "dec", id: Abx}),
-        (dcp::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "dcp", id: Abx}),
+        (bne::<RelativeAddressing>, 2, true, "bne",Rel),
+        (cmp::<IndirectYAddressing>, 5, true, "cmp",Iny),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (dcp::<IndirectYAddressing>, 8, false, "dcp",Iny),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (cmp::<ZeroPageXAddressing>, 4, false, "cmp",Zpx),
+        (dec::<ZeroPageXAddressing>, 6, false, "dec",Zpx),
+        (dcp::<ZeroPageXAddressing>, 6, false, "dcp",Zpx),
+        (cld::<ImpliedAddressing>, 2, false, "cld",Imp),
+        (cmp::<AbsoluteYAddressing>, 4, true, "cmp",Aby),
+        (nop::<ImpliedAddressing>, 2, false, "nop",Imp),
+        (dcp::<AbsoluteYAddressing>, 7, false, "dcp",Aby),
+        (nop::<AbsoluteXAddressing>, 4, true, "nop",Abx),
+        (cmp::<AbsoluteXAddressing>, 4, true, "cmp",Abx),
+        (dec::<AbsoluteXAddressing>, 7, false, "dec",Abx),
+        (dcp::<AbsoluteXAddressing>, 7, false, "dcp",Abx),
 
         // 0xe0 - 0xef
-        (cpx::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cpx", id: Imm}),
-        (sbc::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "sbc", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (isc::<XIndirectAddressing>, 8, false, OpcodeMarker{ name: "isc", id: Xin}),
-        (cpx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cpx", id: Zpg}),
-        (sbc::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sbc", id: Zpg}),
-        (inc::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "inc", id: Zpg}),
-        (isc::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "isc", id: Zpg}),
-        (inx::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "inx", id: Imp}),
-        (sbc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "sbc", id: Imm}),
-        (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (sbc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "sbc", id: Imm}),
-        (cpx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cpx", id: Abs}),
-        (sbc::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sbc", id: Abs}),
-        (inc::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "inc", id: Abs}),
-        (isc::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "isc", id: Abs}),
+        (cpx::<ImmediateAddressing>, 2, false, "cpx",Imm),
+        (sbc::<XIndirectAddressing>, 6, false, "sbc",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (isc::<XIndirectAddressing>, 8, false, "isc",Xin),
+        (cpx::<ZeroPageAddressing>, 3, false, "cpx",Zpg),
+        (sbc::<ZeroPageAddressing>, 3, false, "sbc",Zpg),
+        (inc::<ZeroPageAddressing>, 5, false, "inc",Zpg),
+        (isc::<ZeroPageAddressing>, 5, false, "isc",Zpg),
+        (inx::<ImpliedAddressing>, 2, false, "inx",Imp),
+        (sbc::<ImmediateAddressing>, 2, false, "sbc",Imm),
+        (nop::<ImpliedAddressing>, 2, false, "nop",Imp),
+        (sbc::<ImmediateAddressing>, 2, false, "sbc",Imm),
+        (cpx::<AbsoluteAddressing>, 4, false, "cpx",Abs),
+        (sbc::<AbsoluteAddressing>, 4, false, "sbc",Abs),
+        (inc::<AbsoluteAddressing>, 6, false, "inc",Abs),
+        (isc::<AbsoluteAddressing>, 6, false, "isc",Abs),
 
         // 0xf0 - 0xff
-        (beq::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "beq", id: Rel}),
-        (sbc::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "sbc", id: Iny}),
-        (kil::<ImpliedAddressing>, 0, false, OpcodeMarker{ name: "kil", id: Imp}),
-        (isc::<IndirectYAddressing>, 8, false, OpcodeMarker{ name: "isc", id: Iny}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (sbc::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sbc", id: Zpx}),
-        (inc::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "inc", id: Zpx}),
-        (isc::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "isc", id: Zpx}),
-        (sed::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sed", id: Imp}),
-        (sbc::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "sbc", id: Aby}),
-        (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (isc::<AbsoluteYAddressing>, 7, false, OpcodeMarker{ name: "isc", id: Aby}),
-        (nop::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abx}),
-        (sbc::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "sbc", id: Abx}),
-        (inc::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "inc", id: Abx}),
-        (isc::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "isc", id: Abx}),
+        (beq::<RelativeAddressing>, 2, true, "beq",Rel),
+        (sbc::<IndirectYAddressing>, 5, true, "sbc",Iny),
+        (kil::<ImpliedAddressing>, 0, false, "kil",Imp),
+        (isc::<IndirectYAddressing>, 8, false, "isc",Iny),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (sbc::<ZeroPageXAddressing>, 4, false, "sbc",Zpx),
+        (inc::<ZeroPageXAddressing>, 6, false, "inc",Zpx),
+        (isc::<ZeroPageXAddressing>, 6, false, "isc",Zpx),
+        (sed::<ImpliedAddressing>, 2, false, "sed",Imp),
+        (sbc::<AbsoluteYAddressing>, 4, true, "sbc",Aby),
+        (nop::<ImpliedAddressing>, 2, false, "nop",Imp),
+        (isc::<AbsoluteYAddressing>, 7, false, "isc",Aby),
+        (nop::<AbsoluteXAddressing>, 4, true, "nop",Abx),
+        (sbc::<AbsoluteXAddressing>, 4, true, "sbc",Abx),
+        (inc::<AbsoluteXAddressing>, 7, false, "inc",Abx),
+        (isc::<AbsoluteXAddressing>, 7, false, "isc",Abx),
     ];
 
 /// 65C02 opcode table, same as above with the 65C02 differences.
-pub(crate) static ref OPCODE_MATRIX_65C02: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, opcode_byte: u8, in_cycles: usize, extra_cycle_on_page_crossing: bool, decode_only: bool) -> Result<(i8, usize, Option<String>), CpuError>, usize, bool, OpcodeMarker)> =
+pub(crate) static ref OPCODE_MATRIX_65C02: Vec<( fn(c: &mut Cpu, d: Option<&Debugger>, in_cycles: usize, extra_cycle_on_page_crossing: bool) -> Result<(i8, usize), CpuError>, usize, bool, &'static str, AddressingModeId)> =
     vec![
         // 0x0 - 0xf
-        (brk::<ImpliedAddressing>, 7, false, OpcodeMarker{ name: "brk", id: Imp}),
-        (ora::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "ora", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (tsb::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "tsb", id: Zpg}),
-        (ora::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ora", id: Zpg}),
-        (asl::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "asl", id: Zpg}),
-        (rmb0::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rmb0", id: Zpg}),
-        (php::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "php", id: Imp}),
-        (ora::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ora", id: Imm}),
-        (asl::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "asl", id: Acc}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (tsb::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "tsb", id: Abs}),
-        (ora::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ora", id: Abs}),
-        (asl::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "asl", id: Abs}),
-        (bbr0::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr0", id: Zpr}),
+        (brk::<ImpliedAddressing>, 7, false, "brk",Imp),
+        (ora::<XIndirectAddressing>, 6, false, "ora",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (tsb::<ZeroPageAddressing>, 5, false, "tsb",Zpg),
+        (ora::<ZeroPageAddressing>, 3, false, "ora",Zpg),
+        (asl::<ZeroPageAddressing>, 5, false, "asl",Zpg),
+        (rmb0::<ZeroPageAddressing>, 5, false, "rmb0",Zpg),
+        (php::<ImpliedAddressing>, 3, false, "php",Imp),
+        (ora::<ImmediateAddressing>, 2, false, "ora",Imm),
+        (asl::<AccumulatorAddressing>, 2, false, "asl",Acc),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (tsb::<AbsoluteAddressing>, 6, false, "tsb",Abs),
+        (ora::<AbsoluteAddressing>, 4, false, "ora",Abs),
+        (asl::<AbsoluteAddressing>, 6, false, "asl",Abs),
+        (bbr0::<ZeroPageRelativeAddressing>, 5, false, "bbr0",Zpr),
 
         // 0x10 - 0x1f
-        (bpl::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bpl", id: Rel}),
-        (ora::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "ora", id: Iny}),
-        (ora::<IndirectZeroPageAddressing>, 5, false, OpcodeMarker{ name: "ora", id: Izp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (trb::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "trb", id: Zpg}),
-        (ora::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "ora", id: Zpx}),
-        (asl::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "asl", id: Zpx}),
-        (rmb1::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rmb1", id: Zpg}),
-        (clc::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "clc", id: Imp}),
-        (ora::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "ora", id: Aby}),
-        (inc::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "inc", id: Acc}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (trb::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "trb", id: Abs}),
-        (ora::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "ora", id: Abx}),
-        (asl::<AbsoluteXAddressing>, 6, true, OpcodeMarker{ name: "asl", id: Abx}),
-        (bbr1::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr1", id: Zpr}),
+        (bpl::<RelativeAddressing>, 2, true, "bpl",Rel),
+        (ora::<IndirectYAddressing>, 5, true, "ora",Iny),
+        (ora::<IndirectZeroPageAddressing>, 5, false, "ora",Izp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (trb::<ZeroPageAddressing>, 5, false, "trb",Zpg),
+        (ora::<ZeroPageXAddressing>, 4, false, "ora",Zpx),
+        (asl::<ZeroPageXAddressing>, 6, false, "asl",Zpx),
+        (rmb1::<ZeroPageAddressing>, 5, false, "rmb1",Zpg),
+        (clc::<ImpliedAddressing>, 2, false, "clc",Imp),
+        (ora::<AbsoluteYAddressing>, 4, true, "ora",Aby),
+        (inc::<AccumulatorAddressing>, 2, false, "inc",Acc),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (trb::<AbsoluteAddressing>, 6, false, "trb",Abs),
+        (ora::<AbsoluteXAddressing>, 4, true, "ora",Abx),
+        (asl::<AbsoluteXAddressing>, 6, true, "asl",Abx),
+        (bbr1::<ZeroPageRelativeAddressing>, 5, false, "bbr1",Zpr),
 
         // 0x20 - 0x2f
-        (jsr::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "jsr", id: Abs}),
-        (and::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "and", id: Abx}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (bit::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "bit", id: Zpg}),
-        (and::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "and", id: Zpg}),
-        (rol::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rol", id: Zpg}),
-        (rmb2::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rmb2", id: Zpg}),
-        (plp::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "plp", id: Imp}),
-        (and::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "and", id: Imm}),
-        (rol::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "rol", id: Acc}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (bit::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "bit", id: Abs}),
-        (and::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "and", id: Abs}),
-        (rol::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "rol", id: Abs}),
-        (bbr2::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr2", id: Zpr}),
+        (jsr::<AbsoluteAddressing>, 6, false, "jsr",Abs),
+        (and::<XIndirectAddressing>, 6, false, "and",Abx),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (bit::<ZeroPageAddressing>, 3, false, "bit",Zpg),
+        (and::<ZeroPageAddressing>, 3, false, "and",Zpg),
+        (rol::<ZeroPageAddressing>, 5, false, "rol",Zpg),
+        (rmb2::<ZeroPageAddressing>, 5, false, "rmb2",Zpg),
+        (plp::<ImpliedAddressing>, 4, false, "plp",Imp),
+        (and::<ImmediateAddressing>, 2, false, "and",Imm),
+        (rol::<AccumulatorAddressing>, 2, false, "rol",Acc),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (bit::<AbsoluteAddressing>, 4, false, "bit",Abs),
+        (and::<AbsoluteAddressing>, 4, false, "and",Abs),
+        (rol::<AbsoluteAddressing>, 6, false, "rol",Abs),
+        (bbr2::<ZeroPageRelativeAddressing>, 5, false, "bbr2",Zpr),
 
         // 0x30 - 0x3f
-        (bmi::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bmi", id: Rel}),
-        (and::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "and", id: Iny}),
-        (and::<IndirectZeroPageAddressing>, 5, false, OpcodeMarker{ name: "and", id: Izp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (bit::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "bit", id: Zpx}),
-        (and::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "and", id: Zpx}),
-        (rol::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "rol", id: Zpx}),
-        (rmb3::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rmb3", id: Zpg}),
-        (sec::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sec", id: Imp}),
-        (and::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "and", id: Aby}),
-        (dec::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "dec", id: Acc}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (bit::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "bit", id: Abx}),
-        (and::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "and", id: Abx}),
-        (rol::<AbsoluteXAddressing>, 6, true, OpcodeMarker{ name: "rol", id: Abx}),
-        (bbr3::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr3", id: Zpr}),
+        (bmi::<RelativeAddressing>, 2, true, "bmi",Rel),
+        (and::<IndirectYAddressing>, 5, true, "and",Iny),
+        (and::<IndirectZeroPageAddressing>, 5, false, "and",Izp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (bit::<ZeroPageXAddressing>, 4, false, "bit",Zpx),
+        (and::<ZeroPageXAddressing>, 4, false, "and",Zpx),
+        (rol::<ZeroPageXAddressing>, 6, false, "rol",Zpx),
+        (rmb3::<ZeroPageAddressing>, 5, false, "rmb3",Zpg),
+        (sec::<ImpliedAddressing>, 2, false, "sec",Imp),
+        (and::<AbsoluteYAddressing>, 4, true, "and",Aby),
+        (dec::<AccumulatorAddressing>, 2, false, "dec",Acc),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (bit::<AbsoluteXAddressing>, 4, true, "bit",Abx),
+        (and::<AbsoluteXAddressing>, 4, true, "and",Abx),
+        (rol::<AbsoluteXAddressing>, 6, true, "rol",Abx),
+        (bbr3::<ZeroPageRelativeAddressing>, 5, false, "bbr3",Zpr),
 
         // 0x40 - 0x4f
-        (rti::<ImpliedAddressing>, 6, false, OpcodeMarker{ name: "rti", id: Imp}),
-        (eor::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "eor", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (nop::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "nop", id: Zpg}),
-        (eor::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "eor", id: Zpg}),
-        (lsr::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "lsr", id: Zpg}),
-        (rmb4::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rmb4", id: Zpg}),
-        (pha::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "pha", id: Imp}),
-        (eor::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "eor", id: Imm}),
-        (lsr::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "lsr", id: Acc}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (jmp::<AbsoluteAddressing>, 3, false, OpcodeMarker{ name: "jmp", id: Abs}),
-        (eor::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "eor", id: Abs}),
-        (lsr::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Abs}),
-        (bbr4::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr4", id: Zpr}),
+        (rti::<ImpliedAddressing>, 6, false, "rti",Imp),
+        (eor::<XIndirectAddressing>, 6, false, "eor",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (nop::<ZeroPageAddressing>, 3, false, "nop",Zpg),
+        (eor::<ZeroPageAddressing>, 3, false, "eor",Zpg),
+        (lsr::<ZeroPageAddressing>, 5, false, "lsr",Zpg),
+        (rmb4::<ZeroPageAddressing>, 5, false, "rmb4",Zpg),
+        (pha::<ImpliedAddressing>, 3, false, "pha",Imp),
+        (eor::<ImmediateAddressing>, 2, false, "eor",Imm),
+        (lsr::<AccumulatorAddressing>, 2, false, "lsr",Acc),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (jmp::<AbsoluteAddressing>, 3, false, "jmp",Abs),
+        (eor::<AbsoluteAddressing>, 4, false, "eor",Abs),
+        (lsr::<AbsoluteAddressing>, 6, false, "lsr",Abs),
+        (bbr4::<ZeroPageRelativeAddressing>, 5, false, "bbr4",Zpr),
 
         // 0x50 - 0x5f
-        (bvc::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bvc", id: Rel}),
-        (eor::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "eor", id: Iny}),
-        (eor::<IndirectZeroPageAddressing>, 5, false, OpcodeMarker{ name: "eor", id: Izp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (eor::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "eor", id: Zpx}),
-        (lsr::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "lsr", id: Zpx}),
-        (rmb5::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rmb5", id: Zpg}),
-        (cli::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "cli", id: Imp}),
-        (eor::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Aby}),
-        (phy::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "phy", id: Imp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (nop::<AbsoluteAddressing>, 8, false, OpcodeMarker{ name: "nop", id: Abs}),
-        (eor::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "eor", id: Abx}),
-        (lsr::<AbsoluteXAddressing>, 6, true, OpcodeMarker{ name: "lsr", id: Abx}),
-        (bbr5::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr5", id: Zpr}),
+        (bvc::<RelativeAddressing>, 2, true, "bvc",Rel),
+        (eor::<IndirectYAddressing>, 5, true, "eor",Iny),
+        (eor::<IndirectZeroPageAddressing>, 5, false, "eor",Izp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (eor::<ZeroPageXAddressing>, 4, false, "eor",Zpx),
+        (lsr::<ZeroPageXAddressing>, 6, false, "lsr",Zpx),
+        (rmb5::<ZeroPageAddressing>, 5, false, "rmb5",Zpg),
+        (cli::<ImpliedAddressing>, 2, false, "cli",Imp),
+        (eor::<AbsoluteYAddressing>, 4, true, "eor",Aby),
+        (phy::<ImpliedAddressing>, 3, false, "phy",Imp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (nop::<AbsoluteAddressing>, 8, false, "nop",Abs),
+        (eor::<AbsoluteXAddressing>, 4, true, "eor",Abx),
+        (lsr::<AbsoluteXAddressing>, 6, true, "lsr",Abx),
+        (bbr5::<ZeroPageRelativeAddressing>, 5, false, "bbr5",Zpr),
 
         // 0x60 - 0x6f
-        (rts::<ImpliedAddressing>, 6, false, OpcodeMarker{ name: "rts", id: Imp}),
-        (adc::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "adc", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (stz::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "stz", id: Zpg}),
-        (adc::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "adc", id: Zpg}),
-        (ror::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "ror", id: Zpg}),
-        (rmb6::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rmb6", id: Zpg}),
-        (pla::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "pla", id: Imp}),
-        (adc::<ImmediateAddressing>, 2, true, OpcodeMarker{ name: "adc", id: Imm}),
-        (ror::<AccumulatorAddressing>, 2, false, OpcodeMarker{ name: "ror", id: Acc}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (jmp::<IndirectAddressing>, 6, false, OpcodeMarker{ name: "jmp", id: Ind}),
-        (adc::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "adc", id: Abs}),
-        (ror::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "ror", id: Abs}),
-        (bbr6::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr6", id: Zpr}),
+        (rts::<ImpliedAddressing>, 6, false, "rts",Imp),
+        (adc::<XIndirectAddressing>, 6, false, "adc",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (stz::<ZeroPageAddressing>, 3, false, "stz",Zpg),
+        (adc::<ZeroPageAddressing>, 3, false, "adc",Zpg),
+        (ror::<ZeroPageAddressing>, 5, false, "ror",Zpg),
+        (rmb6::<ZeroPageAddressing>, 5, false, "rmb6",Zpg),
+        (pla::<ImpliedAddressing>, 4, false, "pla",Imp),
+        (adc::<ImmediateAddressing>, 2, true, "adc",Imm),
+        (ror::<AccumulatorAddressing>, 2, false, "ror",Acc),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (jmp::<IndirectAddressing>, 6, false, "jmp",Ind),
+        (adc::<AbsoluteAddressing>, 4, false, "adc",Abs),
+        (ror::<AbsoluteAddressing>, 6, false, "ror",Abs),
+        (bbr6::<ZeroPageRelativeAddressing>, 5, false, "bbr6",Zpr),
 
         // 0x70 - 0x7f
-        (bvs::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bvs", id: Rel}),
-        (adc::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "adc", id: Iny}),
-        (adc::<IndirectZeroPageAddressing>, 5, false, OpcodeMarker{ name: "adc", id: Izp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (stz::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "stz", id: Zpx}),
-        (adc::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "adc", id: Zpx}),
-        (ror::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "ror", id: Zpx}),
-        (rmb7::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "rmb7", id: Zpg}),
-        (sei::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sei", id: Imp}),
-        (adc::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "adc", id: Aby}),
-        (ply::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "ply", id: Imp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (jmp::<AbsoluteIndirectXAddressing>, 6, false, OpcodeMarker{ name: "jmp", id: Aix}),
-        (adc::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "adc", id: Abx}),
-        (ror::<AbsoluteXAddressing>, 7, true, OpcodeMarker{ name: "ror", id: Abx}),
-        (bbr7::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbr7", id: Zpr}),
+        (bvs::<RelativeAddressing>, 2, true, "bvs",Rel),
+        (adc::<IndirectYAddressing>, 5, true, "adc",Iny),
+        (adc::<IndirectZeroPageAddressing>, 5, false, "adc",Izp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (stz::<ZeroPageXAddressing>, 4, false, "stz",Zpx),
+        (adc::<ZeroPageXAddressing>, 4, false, "adc",Zpx),
+        (ror::<ZeroPageXAddressing>, 6, false, "ror",Zpx),
+        (rmb7::<ZeroPageAddressing>, 5, false, "rmb7",Zpg),
+        (sei::<ImpliedAddressing>, 2, false, "sei",Imp),
+        (adc::<AbsoluteYAddressing>, 4, true, "adc",Aby),
+        (ply::<ImpliedAddressing>, 4, false, "ply",Imp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (jmp::<AbsoluteIndirectXAddressing>, 6, false, "jmp",Aix),
+        (adc::<AbsoluteXAddressing>, 4, true, "adc",Abx),
+        (ror::<AbsoluteXAddressing>, 7, true, "ror",Abx),
+        (bbr7::<ZeroPageRelativeAddressing>, 5, false, "bbr7",Zpr),
 
         // 0x80 - 0x8f
-        (bra::<RelativeAddressing>, 3, true, OpcodeMarker{ name: "bra", id: Rel}),
-        (sta::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "sta", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (sty::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sty", id: Zpg}),
-        (sta::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sta", id: Zpg}),
-        (stx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "stx", id: Zpg}),
-        (smb0::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "smb0", id: Zpg}),
-        (dey::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "dey", id: Imp}),
-        (bit::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "bit", id: Imm}),
-        (txa::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "txa", id: Imp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (sty::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sty", id: Abs}),
-        (sta::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sta", id: Abs}),
-        (stx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "stx", id: Abs}),
-        (bbs0::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbs0", id: Zpr}),
+        (bra::<RelativeAddressing>, 3, true, "bra",Rel),
+        (sta::<XIndirectAddressing>, 6, false, "sta",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (sty::<ZeroPageAddressing>, 3, false, "sty",Zpg),
+        (sta::<ZeroPageAddressing>, 3, false, "sta",Zpg),
+        (stx::<ZeroPageAddressing>, 3, false, "stx",Zpg),
+        (smb0::<ZeroPageAddressing>, 5, false, "smb0",Zpg),
+        (dey::<ImpliedAddressing>, 2, false, "dey",Imp),
+        (bit::<ImmediateAddressing>, 2, false, "bit",Imm),
+        (txa::<ImpliedAddressing>, 2, false, "txa",Imp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (sty::<AbsoluteAddressing>, 4, false, "sty",Abs),
+        (sta::<AbsoluteAddressing>, 4, false, "sta",Abs),
+        (stx::<AbsoluteAddressing>, 4, false, "stx",Abs),
+        (bbs0::<ZeroPageRelativeAddressing>, 5, false, "bbs0",Zpr),
 
         // 0x90 - 0x9f
-        (bcc::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bcc", id: Rel}),
-        (sta::<IndirectYAddressing>, 6, false, OpcodeMarker{ name: "sta", id: Iny}),
-        (sta::<IndirectZeroPageAddressing>, 5, false, OpcodeMarker{ name: "kil", id: Izp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (sty::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sty", id: Zpx}),
-        (sta::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sta", id: Zpx}),
-        (stx::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "stx", id: Zpy}),
-        (smb1::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "smb1", id: Zpg}),
-        (tya::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tya", id: Imp}),
-        (sta::<AbsoluteYAddressing>, 5, false, OpcodeMarker{ name: "sta", id: Aby}),
-        (txs::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "txs", id: Imp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (stz::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "stz", id: Abs}),
-        (sta::<AbsoluteXAddressing>, 5, false, OpcodeMarker{ name: "sta", id: Abx}),
-        (stz::<AbsoluteXAddressing>, 5, false, OpcodeMarker{ name: "stz", id: Abx}),
-        (bbs1::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbs1", id: Zpr}),
+        (bcc::<RelativeAddressing>, 2, true, "bcc",Rel),
+        (sta::<IndirectYAddressing>, 6, false, "sta",Iny),
+        (sta::<IndirectZeroPageAddressing>, 5, false, "kil",Izp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (sty::<ZeroPageXAddressing>, 4, false, "sty",Zpx),
+        (sta::<ZeroPageXAddressing>, 4, false, "sta",Zpx),
+        (stx::<ZeroPageYAddressing>, 4, false, "stx",Zpy),
+        (smb1::<ZeroPageAddressing>, 5, false, "smb1",Zpg),
+        (tya::<ImpliedAddressing>, 2, false, "tya",Imp),
+        (sta::<AbsoluteYAddressing>, 5, false, "sta",Aby),
+        (txs::<ImpliedAddressing>, 2, false, "txs",Imp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (stz::<AbsoluteAddressing>, 4, false, "stz",Abs),
+        (sta::<AbsoluteXAddressing>, 5, false, "sta",Abx),
+        (stz::<AbsoluteXAddressing>, 5, false, "stz",Abx),
+        (bbs1::<ZeroPageRelativeAddressing>, 5, false, "bbs1",Zpr),
 
         // 0xa0 - 0xaf
-        (ldy::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ldy", id: Imm}),
-        (lda::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "lda", id: Xin}),
-        (ldx::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "ldx", id: Imm}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (ldy::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ldy", id: Zpg}),
-        (lda::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "lda", id: Zpg}),
-        (ldx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "ldx", id: Zpg}),
-        (smb2::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "smb2", id: Zpg}),
-        (tay::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tay", id: Imp}),
-        (lda::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "lda", id: Imm}),
-        (tax::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tax", id: Imp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (ldy::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ldy", id: Abs}),
-        (lda::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "lda", id: Abs}),
-        (ldx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "ldx", id: Abs}),
-        (bbs2::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbs2", id: Zpr}),
+        (ldy::<ImmediateAddressing>, 2, false, "ldy",Imm),
+        (lda::<XIndirectAddressing>, 6, false, "lda",Xin),
+        (ldx::<ImmediateAddressing>, 2, false, "ldx",Imm),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (ldy::<ZeroPageAddressing>, 3, false, "ldy",Zpg),
+        (lda::<ZeroPageAddressing>, 3, false, "lda",Zpg),
+        (ldx::<ZeroPageAddressing>, 3, false, "ldx",Zpg),
+        (smb2::<ZeroPageAddressing>, 5, false, "smb2",Zpg),
+        (tay::<ImpliedAddressing>, 2, false, "tay",Imp),
+        (lda::<ImmediateAddressing>, 2, false, "lda",Imm),
+        (tax::<ImpliedAddressing>, 2, false, "tax",Imp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (ldy::<AbsoluteAddressing>, 4, false, "ldy",Abs),
+        (lda::<AbsoluteAddressing>, 4, false, "lda",Abs),
+        (ldx::<AbsoluteAddressing>, 4, false, "ldx",Abs),
+        (bbs2::<ZeroPageRelativeAddressing>, 5, false, "bbs2",Zpr),
 
         // 0xb0 - 0xbf
-        (bcs::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bcs", id: Rel}),
-        (lda::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "lda", id: Iny}),
-        (lda::<IndirectZeroPageAddressing>, 5, false, OpcodeMarker{ name: "lda", id: Izp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (ldy::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "ldy", id: Zpx}),
-        (lda::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "lda", id: Zpx}),
-        (ldx::<ZeroPageYAddressing>, 4, false, OpcodeMarker{ name: "ldx", id: Zpy}),
-        (smb3::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "smb3", id: Zpg}),
-        (clv::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "clv", id: Imp}),
-        (lda::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "lda", id: Aby}),
-        (tsx::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "tsx", id: Imp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (ldy::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "ldy", id: Abx}),
-        (lda::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "lda", id: Abx}),
-        (ldx::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "ldx", id: Aby}),
-        (bbs3::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbs3", id: Zpr}),
+        (bcs::<RelativeAddressing>, 2, true, "bcs",Rel),
+        (lda::<IndirectYAddressing>, 5, true, "lda",Iny),
+        (lda::<IndirectZeroPageAddressing>, 5, false, "lda",Izp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (ldy::<ZeroPageXAddressing>, 4, false, "ldy",Zpx),
+        (lda::<ZeroPageXAddressing>, 4, false, "lda",Zpx),
+        (ldx::<ZeroPageYAddressing>, 4, false, "ldx",Zpy),
+        (smb3::<ZeroPageAddressing>, 5, false, "smb3",Zpg),
+        (clv::<ImpliedAddressing>, 2, false, "clv",Imp),
+        (lda::<AbsoluteYAddressing>, 4, true, "lda",Aby),
+        (tsx::<ImpliedAddressing>, 2, false, "tsx",Imp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (ldy::<AbsoluteXAddressing>, 4, true, "ldy",Abx),
+        (lda::<AbsoluteXAddressing>, 4, true, "lda",Abx),
+        (ldx::<AbsoluteYAddressing>, 4, true, "ldx",Aby),
+        (bbs3::<ZeroPageRelativeAddressing>, 5, false, "bbs3",Zpr),
 
         // 0xc0 - 0xcf
-        (cpy::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cpy", id: Imm}),
-        (cmp::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "cmp", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (cpy::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cpy", id: Zpg}),
-        (cmp::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cmp", id: Zpg}),
-        (dec::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "dec", id: Zpg}),
-        (smb4::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "smb4", id: Zpg}),
-        (iny::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "iny", id: Imp}),
-        (cmp::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cmp", id: Imm}),
-        (dex::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "dex", id: Imp}),
-        (wai::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "wai", id: Imp}),
-        (cpy::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cpy", id: Abs}),
-        (cmp::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cmp", id: Abs}),
-        (dec::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "dec", id: Abs}),
-        (bbs4::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbs4", id: Zpr}),
+        (cpy::<ImmediateAddressing>, 2, false, "cpy",Imm),
+        (cmp::<XIndirectAddressing>, 6, false, "cmp",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (cpy::<ZeroPageAddressing>, 3, false, "cpy",Zpg),
+        (cmp::<ZeroPageAddressing>, 3, false, "cmp",Zpg),
+        (dec::<ZeroPageAddressing>, 5, false, "dec",Zpg),
+        (smb4::<ZeroPageAddressing>, 5, false, "smb4",Zpg),
+        (iny::<ImpliedAddressing>, 2, false, "iny",Imp),
+        (cmp::<ImmediateAddressing>, 2, false, "cmp",Imm),
+        (dex::<ImpliedAddressing>, 2, false, "dex",Imp),
+        (wai::<ImpliedAddressing>, 3, false, "wai",Imp),
+        (cpy::<AbsoluteAddressing>, 4, false, "cpy",Abs),
+        (cmp::<AbsoluteAddressing>, 4, false, "cmp",Abs),
+        (dec::<AbsoluteAddressing>, 6, false, "dec",Abs),
+        (bbs4::<ZeroPageRelativeAddressing>, 5, false, "bbs4",Zpr),
 
         // 0xd0 - 0xdf
-        (bne::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "bne", id: Rel}),
-        (cmp::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "cmp", id: Iny}),
-        (cmp::<IndirectZeroPageAddressing>, 5, false, OpcodeMarker{ name: "cmp", id: Izp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (cmp::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "cmp", id: Zpx}),
-        (dec::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "dec", id: Zpx}),
-        (smb5::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "smb5", id: Zpg}),
-        (cld::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "cld", id: Imp}),
-        (cmp::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "cmp", id: Aby}),
-        (phx::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "phx", id: Imp}),
-        (stp::<ImpliedAddressing>, 3, false, OpcodeMarker{ name: "stp", id: Imp}),
-        (nop::<AbsoluteAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abs}),
-        (cmp::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "cmp", id: Abx}),
-        (dec::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "dec", id: Abx}),
-        (bbs5::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbs5", id: Zpr}),
+        (bne::<RelativeAddressing>, 2, true, "bne",Rel),
+        (cmp::<IndirectYAddressing>, 5, true, "cmp",Iny),
+        (cmp::<IndirectZeroPageAddressing>, 5, false, "cmp",Izp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (cmp::<ZeroPageXAddressing>, 4, false, "cmp",Zpx),
+        (dec::<ZeroPageXAddressing>, 6, false, "dec",Zpx),
+        (smb5::<ZeroPageAddressing>, 5, false, "smb5",Zpg),
+        (cld::<ImpliedAddressing>, 2, false, "cld",Imp),
+        (cmp::<AbsoluteYAddressing>, 4, true, "cmp",Aby),
+        (phx::<ImpliedAddressing>, 3, false, "phx",Imp),
+        (stp::<ImpliedAddressing>, 3, false, "stp",Imp),
+        (nop::<AbsoluteAddressing>, 4, true, "nop",Abs),
+        (cmp::<AbsoluteXAddressing>, 4, true, "cmp",Abx),
+        (dec::<AbsoluteXAddressing>, 7, false, "dec",Abx),
+        (bbs5::<ZeroPageRelativeAddressing>, 5, false, "bbs5",Zpr),
 
         // 0xe0 - 0xef
-        (cpx::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "cpx", id: Imm}),
-        (sbc::<XIndirectAddressing>, 6, false, OpcodeMarker{ name: "sbc", id: Xin}),
-        (nop::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imm}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (cpx::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "cpx", id: Zpg}),
-        (sbc::<ZeroPageAddressing>, 3, false, OpcodeMarker{ name: "sbc", id: Zpg}),
-        (inc::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "inc", id: Zpg}),
-        (smb6::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "smb6", id: Zpg}),
-        (inx::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "inx", id: Imp}),
-        (sbc::<ImmediateAddressing>, 2, false, OpcodeMarker{ name: "sbc", id: Imm}),
-        (nop::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (cpx::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "cpx", id: Abs}),
-        (sbc::<AbsoluteAddressing>, 4, false, OpcodeMarker{ name: "sbc", id: Abs}),
-        (inc::<AbsoluteAddressing>, 6, false, OpcodeMarker{ name: "inc", id: Abs}),
-        (bbs6::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbs6", id: Zpr}),
+        (cpx::<ImmediateAddressing>, 2, false, "cpx",Imm),
+        (sbc::<XIndirectAddressing>, 6, false, "sbc",Xin),
+        (nop::<ImmediateAddressing>, 2, false, "nop",Imm),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (cpx::<ZeroPageAddressing>, 3, false, "cpx",Zpg),
+        (sbc::<ZeroPageAddressing>, 3, false, "sbc",Zpg),
+        (inc::<ZeroPageAddressing>, 5, false, "inc",Zpg),
+        (smb6::<ZeroPageAddressing>, 5, false, "smb6",Zpg),
+        (inx::<ImpliedAddressing>, 2, false, "inx",Imp),
+        (sbc::<ImmediateAddressing>, 2, false, "sbc",Imm),
+        (nop::<ImpliedAddressing>, 2, false, "nop",Imp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (cpx::<AbsoluteAddressing>, 4, false, "cpx",Abs),
+        (sbc::<AbsoluteAddressing>, 4, false, "sbc",Abs),
+        (inc::<AbsoluteAddressing>, 6, false, "inc",Abs),
+        (bbs6::<ZeroPageRelativeAddressing>, 5, false, "bbs6",Zpr),
 
         // 0xf0 - 0xff
-        (beq::<RelativeAddressing>, 2, true, OpcodeMarker{ name: "beq", id: Rel}),
-        (sbc::<IndirectYAddressing>, 5, true, OpcodeMarker{ name: "sbc", id: Iny}),
-        (sbc::<IndirectZeroPageAddressing>, 5, false, OpcodeMarker{ name: "sbc", id: Izp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (nop::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "nop", id: Zpx}),
-        (sbc::<ZeroPageXAddressing>, 4, false, OpcodeMarker{ name: "sbc", id: Zpx}),
-        (inc::<ZeroPageXAddressing>, 6, false, OpcodeMarker{ name: "inc", id: Zpx}),
-        (smb7::<ZeroPageAddressing>, 5, false, OpcodeMarker{ name: "smb7", id: Zpg}),
-        (sed::<ImpliedAddressing>, 2, false, OpcodeMarker{ name: "sed", id: Imp}),
-        (sbc::<AbsoluteYAddressing>, 4, true, OpcodeMarker{ name: "sbc", id: Aby}),
-        (plx::<ImpliedAddressing>, 4, false, OpcodeMarker{ name: "plx", id: Imp}),
-        (nop::<ImpliedAddressing>, 1, false, OpcodeMarker{ name: "nop", id: Imp}),
-        (nop::<AbsoluteAddressing>, 4, true, OpcodeMarker{ name: "nop", id: Abs}),
-        (sbc::<AbsoluteXAddressing>, 4, true, OpcodeMarker{ name: "sbc", id: Abx}),
-        (inc::<AbsoluteXAddressing>, 7, false, OpcodeMarker{ name: "inc", id: Abx}),
-        (bbs7::<ZeroPageRelativeAddressing>, 5, false, OpcodeMarker{ name: "bbs7", id: Zpr}),
+        (beq::<RelativeAddressing>, 2, true, "beq",Rel),
+        (sbc::<IndirectYAddressing>, 5, true, "sbc",Iny),
+        (sbc::<IndirectZeroPageAddressing>, 5, false, "sbc",Izp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (nop::<ZeroPageXAddressing>, 4, false, "nop",Zpx),
+        (sbc::<ZeroPageXAddressing>, 4, false, "sbc",Zpx),
+        (inc::<ZeroPageXAddressing>, 6, false, "inc",Zpx),
+        (smb7::<ZeroPageAddressing>, 5, false, "smb7",Zpg),
+        (sed::<ImpliedAddressing>, 2, false, "sed",Imp),
+        (sbc::<AbsoluteYAddressing>, 4, true, "sbc",Aby),
+        (plx::<ImpliedAddressing>, 4, false, "plx",Imp),
+        (nop::<ImpliedAddressing>, 1, false, "nop",Imp),
+        (nop::<AbsoluteAddressing>, 4, true, "nop",Abs),
+        (sbc::<AbsoluteXAddressing>, 4, true, "sbc",Abx),
+        (inc::<AbsoluteXAddressing>, 7, false, "inc",Abx),
+        (bbs7::<ZeroPageRelativeAddressing>, 5, false, "bbs7",Zpr),
     ];
  }
+
+/**
+ * prints the 6502 opcode table, for debugging ....
+ */
+#[allow(dead_code)]
+pub fn print_opcode_table() {
+    let mut c = 0;
+    for (i, (_, _, _, name, id)) in OPCODE_MATRIX.iter().enumerate() {
+        print!(
+            "{}0x{:02x}={}({})",
+            if i & 0xf == 2
+                || i & 0xf == 3
+                || i & 0xf == 4
+                || i & 0xf == 7
+                || i & 0xf == 0xb
+                || i & 0xf == 0xc
+                || i & 0xf == 0xf
+            {
+                // indicates specific 65c02 opcode, or change to standard 6502 opcode in 65c02
+                // http://6502.org/tutorials/65c02opcodes.html
+                "**"
+            } else {
+                ""
+            },
+            i,
+            name,
+            id
+        );
+        if c == 15 {
+            print!("\n");
+            c = 0;
+        } else {
+            print!(",");
+            c += 1;
+        }
+    }
+    print!("\n");
+}
 
 /**
  * helper to set Z and N flags in one shot, depending on val
@@ -781,22 +804,11 @@ pub(super) fn push_word_le(c: &mut Cpu, d: Option<&Debugger>, w: u16) -> Result<
 fn adc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
 
-    // get target_address
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    let mut cycles = in_cycles;
-
-    // read operand
     let b = A::load(c, d, tgt)?;
 
     // perform the addition (regs.a+b+C)
@@ -832,7 +844,7 @@ fn adc<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::V, o != 0);
     c.regs.a = (sum & 0xff) as u8;
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -855,19 +867,10 @@ fn adc<A: AddressingMode>(
 fn ahx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    // get target_address
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
 
     // get msb from target address
     let mut h = (tgt >> 8) as u8;
@@ -884,7 +887,7 @@ fn ahx<A: AddressingMode>(
     // store
     A::store(c, d, tgt, res)?;
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -904,33 +907,18 @@ fn ahx<A: AddressingMode>(
 fn alr<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // and (preserve flags, n and z are set in lfr)
     let prev_p = c.regs.p;
-    and::<A>(
-        c,
-        d,
-        opcode_byte,
-        0,
-        _extra_cycle_on_page_crossing,
-        decode_only,
-    )?;
+    and::<A>(c, d, 0, _extra_cycle_on_page_crossing)?;
     c.regs.p = prev_p;
 
     // lsr A
-    lsr::<AccumulatorAddressing>(c, d, opcode_byte, 0, false, decode_only)?;
+    lsr::<AccumulatorAddressing>(c, d, 0, false)?;
 
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -950,28 +938,13 @@ fn alr<A: AddressingMode>(
 fn anc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // and
-    and::<A>(
-        c,
-        d,
-        opcode_byte,
-        in_cycles,
-        _extra_cycle_on_page_crossing,
-        decode_only,
-    )?;
+    and::<A>(c, d, in_cycles, _extra_cycle_on_page_crossing)?;
     c.set_cpu_flags(CpuFlags::C, utils::is_signed(c.regs.a));
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -1006,27 +979,17 @@ fn anc<A: AddressingMode>(
 fn and<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // A AND M -> A
     c.regs.a = c.regs.a & b;
 
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -1053,24 +1016,16 @@ fn and<A: AddressingMode>(
 fn arr<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     if !c.is_cpu_flag_set(CpuFlags::D) {
         // and
-        and::<A>(c, d, opcode_byte, 0, false, decode_only)?;
+        and::<A>(c, d, 0, false)?;
 
         // ror A
         let prev_a = c.regs.a;
-        ror::<AccumulatorAddressing>(c, d, opcode_byte, 0, false, decode_only)?;
+        ror::<AccumulatorAddressing>(c, d, 0, false)?;
 
         // set carry and overflow
         c.set_cpu_flags(CpuFlags::C, utils::is_signed(prev_a));
@@ -1083,9 +1038,9 @@ fn arr<A: AddressingMode>(
     } else {
         // decimal
         // and
-        and::<A>(c, d, opcode_byte, 0, false, decode_only)?;
+        and::<A>(c, d, 0, false)?;
         let and_res = c.regs.a;
-        ror::<AccumulatorAddressing>(c, d, opcode_byte, 0, false, decode_only)?;
+        ror::<AccumulatorAddressing>(c, d, 0, false)?;
 
         // fix for decimal
 
@@ -1111,7 +1066,7 @@ fn arr<A: AddressingMode>(
             c.set_cpu_flags(CpuFlags::C, false);
         }
     }
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -1143,19 +1098,10 @@ fn arr<A: AddressingMode>(
 fn asl<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
     c.set_cpu_flags(CpuFlags::C, utils::is_signed(b));
 
@@ -1165,7 +1111,7 @@ fn asl<A: AddressingMode>(
 
     // store back
     A::store(c, d, tgt, b)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -1190,20 +1136,10 @@ fn asl<A: AddressingMode>(
 fn bcc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // branch
@@ -1224,11 +1160,7 @@ fn bcc<A: AddressingMode>(
         }
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, cycles))
 }
 
 /**
@@ -1254,20 +1186,10 @@ fn bcc<A: AddressingMode>(
 fn bcs<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // branch
@@ -1288,11 +1210,7 @@ fn bcs<A: AddressingMode>(
         }
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, cycles))
 }
 
 /**
@@ -1317,19 +1235,10 @@ fn bcs<A: AddressingMode>(
 fn beq<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // branch
@@ -1351,11 +1260,7 @@ fn beq<A: AddressingMode>(
         }
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, cycles))
 }
 
 /**
@@ -1387,19 +1292,10 @@ fn beq<A: AddressingMode>(
 fn bit<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     let and_res = c.regs.a & b;
@@ -1408,12 +1304,12 @@ fn bit<A: AddressingMode>(
 
     // on 65c02 and immediate mode, N and V are not affected
     if c.cpu_type == CpuType::MOS6502
-        || (c.cpu_type == CpuType::WDC65C02 && A::id() != AddressingModeId::Imm)
+        || (c.cpu_type == CpuType::WDC65C02 && A::id() == AddressingModeId::Imm)
     {
         c.set_cpu_flags(CpuFlags::N, utils::is_signed(b));
         c.set_cpu_flags(CpuFlags::V, b & 0b01000000 != 0);
     }
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -1438,22 +1334,12 @@ fn bit<A: AddressingMode>(
 fn bmi<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    // read operand
     let b = A::load(c, d, tgt)?;
 
     // branch
@@ -1474,11 +1360,7 @@ fn bmi<A: AddressingMode>(
 
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, cycles))
 }
 
 /**
@@ -1503,22 +1385,12 @@ fn bmi<A: AddressingMode>(
 fn bne<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut cycles = in_cycles;
     let mut taken: bool = false;
-    // read operand
     let b = A::load(c, d, tgt)?;
 
     // branch
@@ -1538,11 +1410,7 @@ fn bne<A: AddressingMode>(
         }
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, cycles))
 }
 
 /**
@@ -1567,19 +1435,10 @@ fn bne<A: AddressingMode>(
 fn bpl<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     let mut cycles = in_cycles;
@@ -1600,11 +1459,7 @@ fn bpl<A: AddressingMode>(
         }
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, cycles))
 }
 
 /**
@@ -1628,17 +1483,9 @@ fn bpl<A: AddressingMode>(
 fn brk<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // push pc and p on stack
     push_word_le(c, d, c.regs.pc + 2)?;
 
@@ -1671,7 +1518,7 @@ fn brk<A: AddressingMode>(
     }
     c.processing_ints = true;
     c.regs.pc = addr;
-    Ok((0, in_cycles, None))
+    Ok((0, in_cycles))
 }
 
 /**
@@ -1696,20 +1543,10 @@ fn brk<A: AddressingMode>(
 fn bvc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // branch
@@ -1731,11 +1568,7 @@ fn bvc<A: AddressingMode>(
         }
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, cycles))
 }
 
 /**
@@ -1760,20 +1593,10 @@ fn bvc<A: AddressingMode>(
 fn bvs<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // branch
@@ -1795,11 +1618,7 @@ fn bvs<A: AddressingMode>(
         }
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, cycles))
 }
 
 /**
@@ -1824,20 +1643,12 @@ fn bvs<A: AddressingMode>(
 fn clc<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // clear carry
     c.set_cpu_flags(CpuFlags::C, false);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -1862,20 +1673,12 @@ fn clc<A: AddressingMode>(
 fn cld<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // clear decimal flag
     c.set_cpu_flags(CpuFlags::D, false);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -1900,20 +1703,13 @@ fn cld<A: AddressingMode>(
 fn cli<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     // enable interrupts, clear the flag
     c.set_cpu_flags(CpuFlags::I, false);
 
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -1938,19 +1734,12 @@ fn cli<A: AddressingMode>(
 fn clv<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     // clear the overflow flag
     c.set_cpu_flags(CpuFlags::V, false);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -1984,26 +1773,17 @@ fn clv<A: AddressingMode>(
 fn cmp<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     let res = c.regs.a.wrapping_sub(b);
     c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
     c.set_cpu_flags(CpuFlags::Z, c.regs.a == b);
     c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2032,26 +1812,17 @@ fn cmp<A: AddressingMode>(
 fn cpx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     let res = c.regs.x.wrapping_sub(b);
     c.set_cpu_flags(CpuFlags::C, c.regs.x >= b);
     c.set_cpu_flags(CpuFlags::Z, c.regs.x == b);
     c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2080,19 +1851,10 @@ fn cpx<A: AddressingMode>(
 fn cpy<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     let res = c.regs.y.wrapping_sub(b);
@@ -2100,7 +1862,7 @@ fn cpy<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::Z, c.regs.y == b);
     c.set_cpu_flags(CpuFlags::N, utils::is_signed(res));
 
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2126,23 +1888,15 @@ fn cpy<A: AddressingMode>(
 fn dcp<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // perform dec + cmp internally (flags are set according to cmp, so save before)
     let prev_p = c.regs.p;
-    dec::<A>(c, d, opcode_byte, 0, false, decode_only)?;
+    dec::<A>(c, d, 0, false)?;
     c.regs.p = prev_p;
-    cmp::<A>(c, d, opcode_byte, 0, false, decode_only)?;
-    Ok((A::len(), in_cycles, None))
+    cmp::<A>(c, d, 0, false)?;
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -2172,25 +1926,17 @@ fn dcp<A: AddressingMode>(
 fn dec<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
     b = b.wrapping_sub(1);
     set_zn_flags(c, b);
 
     // store back
     A::store(c, d, tgt, b)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2217,20 +1963,12 @@ fn dec<A: AddressingMode>(
 fn dex<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     c.regs.x = c.regs.x.wrapping_sub(1);
     set_zn_flags(c, c.regs.x);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -2257,19 +1995,12 @@ fn dex<A: AddressingMode>(
 fn dey<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     c.regs.y = c.regs.y.wrapping_sub(1);
     set_zn_flags(c, c.regs.y);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -2304,24 +2035,15 @@ fn dey<A: AddressingMode>(
 fn eor<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     c.regs.a = c.regs.a ^ b;
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2351,19 +2073,10 @@ fn eor<A: AddressingMode>(
 fn inc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
 
     b = b.wrapping_add(1);
@@ -2371,7 +2084,7 @@ fn inc<A: AddressingMode>(
 
     // store back
     A::store(c, d, tgt, b)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2398,19 +2111,12 @@ fn inc<A: AddressingMode>(
 fn inx<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     c.regs.x = c.regs.x.wrapping_add(1);
     set_zn_flags(c, c.regs.x);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -2437,20 +2143,12 @@ fn inx<A: AddressingMode>(
 fn iny<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     c.regs.y = c.regs.y.wrapping_add(1);
     set_zn_flags(c, c.regs.y);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -2477,22 +2175,20 @@ fn iny<A: AddressingMode>(
 fn isc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     // perform inc + sbc internally (sbc sets p, preserve carry flag after inc)
     let prev_p = c.regs.p;
-    inc::<A>(c, d, opcode_byte, 0, false, decode_only)?;
+    inc::<A>(c, d, 0, false)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
     c.regs.p = prev_p;
     c.set_cpu_flags(CpuFlags::C, is_c_set);
 
-    sbc::<A>(c, d, opcode_byte, 0, false, decode_only)?;
-    Ok((A::len(), in_cycles, None))
+    sbc::<A>(c, d, 0, false)?;
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -2518,18 +2214,10 @@ fn isc<A: AddressingMode>(
 fn jmp<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // check for deadlock
     if tgt == c.regs.pc {
         return Err(CpuError::new_default(
@@ -2541,7 +2229,7 @@ fn jmp<A: AddressingMode>(
     // set pc
     c.regs.pc = tgt;
 
-    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((0, in_cycles))
 }
 
 /**
@@ -2566,18 +2254,10 @@ fn jmp<A: AddressingMode>(
 fn jsr<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // push return address
     push_word_le(
         c,
@@ -2596,7 +2276,7 @@ fn jsr<A: AddressingMode>(
     // set pc
     c.regs.pc = tgt;
 
-    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((0, in_cycles))
 }
 
 /**
@@ -2606,17 +2286,10 @@ fn jsr<A: AddressingMode>(
 fn kil<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     _in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     // this is an invalid opcode and emulation should be halted!
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
 
     // invalid !
     let mut e = CpuError::new_default(CpuErrorType::InvalidOpcode, c.regs.pc, None);
@@ -2642,18 +2315,10 @@ fn kil<A: AddressingMode>(
 fn las<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // get operand
     let b = A::load(c, d, tgt)?;
     let res = b & c.regs.s;
@@ -2662,7 +2327,7 @@ fn las<A: AddressingMode>(
     c.regs.x = res;
     c.regs.s = res;
     set_zn_flags(c, res);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2687,25 +2352,16 @@ fn las<A: AddressingMode>(
 fn lax<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     c.regs.a = b;
     c.regs.x = b;
     set_zn_flags(c, b);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2737,23 +2393,15 @@ fn lax<A: AddressingMode>(
 fn lda<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
     c.regs.a = b;
 
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2782,24 +2430,15 @@ fn lda<A: AddressingMode>(
 fn ldx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
     c.regs.x = b;
 
     set_zn_flags(c, c.regs.x);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2828,24 +2467,15 @@ fn ldx<A: AddressingMode>(
 fn ldy<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
     c.regs.y = b;
 
     set_zn_flags(c, c.regs.y);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2876,19 +2506,10 @@ fn ldy<A: AddressingMode>(
 fn lsr<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
 
     // save bit 0 in the carry
@@ -2901,7 +2522,7 @@ fn lsr<A: AddressingMode>(
 
     // store back
     A::store(c, d, tgt, b)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2923,19 +2544,10 @@ fn lsr<A: AddressingMode>(
 fn lxa<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // N and Z are set according to the value of the accumulator before the instruction executed
@@ -2946,7 +2558,7 @@ fn lxa<A: AddressingMode>(
     let res: u8 = (c.regs.a | k) & b;
     c.regs.x = res;
     c.regs.a = res;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -2972,19 +2584,11 @@ fn lxa<A: AddressingMode>(
 fn nop<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // noop, do nothing ...
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3017,22 +2621,14 @@ fn nop<A: AddressingMode>(
 fn ora<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
     c.regs.a |= b;
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -3057,18 +2653,11 @@ fn ora<A: AddressingMode>(
 fn pha<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     push_byte(c, d, c.regs.a)?;
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3095,22 +2684,15 @@ fn pha<A: AddressingMode>(
 fn php<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     // ensure B and U(ndefined) are set to 1
     let mut flags = c.regs.p.clone();
     flags.set(CpuFlags::U, true);
     flags.set(CpuFlags::B, true);
     push_byte(c, d, flags.bits())?;
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3133,20 +2715,12 @@ fn php<A: AddressingMode>(
 fn pla<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     c.regs.a = pop_byte(c, d)?;
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3173,17 +2747,9 @@ fn pla<A: AddressingMode>(
 fn plp<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     let popped_flags = pop_byte(c, d)?;
     c.regs.p = CpuFlags::from_bits(popped_flags).unwrap();
 
@@ -3198,7 +2764,7 @@ fn plp<A: AddressingMode>(
         }
     }
     */
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3225,28 +2791,20 @@ fn plp<A: AddressingMode>(
 fn rla<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // perform rol + and internally
     let prev_p = c.regs.p;
-    rol::<A>(c, d, opcode_byte, 0, false, decode_only)?;
+    rol::<A>(c, d, 0, false)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
     c.regs.p = prev_p;
     c.set_cpu_flags(CpuFlags::C, is_c_set);
     // n and z are set according to AND
-    and::<A>(c, d, opcode_byte, 0, false, decode_only)?;
-    Ok((A::len(), in_cycles, None))
+    and::<A>(c, d, 0, false)?;
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3277,19 +2835,10 @@ fn rla<A: AddressingMode>(
 fn rol<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
 
     // save current carry
@@ -3310,7 +2859,7 @@ fn rol<A: AddressingMode>(
     // store back
     A::store(c, d, tgt, b)?;
     set_zn_flags(c, b);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -3334,18 +2883,10 @@ fn rol<A: AddressingMode>(
 fn ror<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
 
     // save current carry
@@ -3368,7 +2909,7 @@ fn ror<A: AddressingMode>(
     // store back
     A::store(c, d, tgt, b)?;
     set_zn_flags(c, b);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -3394,20 +2935,12 @@ fn ror<A: AddressingMode>(
 fn rra<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // perform ror + adc internally
     let prev_p = c.regs.p;
-    ror::<A>(c, d, opcode_byte, 0, false, decode_only)?;
+    ror::<A>(c, d, 0, false)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -3415,8 +2948,8 @@ fn rra<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::C, is_c_set);
 
     // all other flags are set by adc
-    adc::<A>(c, d, opcode_byte, 0, false, decode_only)?;
-    Ok((A::len(), in_cycles, None))
+    adc::<A>(c, d, 0, false)?;
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3445,17 +2978,9 @@ fn rra<A: AddressingMode>(
 fn rti<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     let popped_flags = pop_byte(c, d)?;
     c.regs.p = CpuFlags::from_bits(popped_flags).unwrap();
 
@@ -3471,7 +2996,7 @@ fn rti<A: AddressingMode>(
     //c.fix_pc_rti = 0;
     c.processing_ints = false;
     println!("returning from RTI at pc=${:04x}", c.regs.pc);
-    Ok((0, in_cycles, None))
+    Ok((0, in_cycles))
 }
 
 /**
@@ -3498,18 +3023,11 @@ fn rti<A: AddressingMode>(
 fn rts<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     c.regs.pc = pop_word_le(c, d)?.wrapping_add(1);
-    Ok((0, in_cycles, None))
+    Ok((0, in_cycles))
 }
 
 /**
@@ -3532,20 +3050,13 @@ fn rts<A: AddressingMode>(
 fn sax<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = c.regs.a & c.regs.x;
     A::store(c, d, tgt, b)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -3572,23 +3083,13 @@ fn sax<A: AddressingMode>(
 fn sbc<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // get target_address
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut cycles = in_cycles;
 
-    // read operand
     let b = A::load(c, d, tgt)?;
 
     // perform non-bcd subtraction (regs.a-b-1+C)
@@ -3625,7 +3126,7 @@ fn sbc<A: AddressingMode>(
     }
     c.set_cpu_flags(CpuFlags::C, sub < 0x100);
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -3645,19 +3146,10 @@ fn sbc<A: AddressingMode>(
 fn sbx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // and
@@ -3667,7 +3159,7 @@ fn sbx<A: AddressingMode>(
     c.regs.x = and_res.wrapping_sub(b);
     c.set_cpu_flags(CpuFlags::C, c.regs.a >= b);
     set_zn_flags(c, c.regs.x);
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -3692,20 +3184,12 @@ fn sbx<A: AddressingMode>(
 fn sec<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // set carry
     c.set_cpu_flags(CpuFlags::C, true);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3730,19 +3214,12 @@ fn sec<A: AddressingMode>(
 fn sed<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     // set decimal flag
     c.set_cpu_flags(CpuFlags::D, true);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3767,19 +3244,12 @@ fn sed<A: AddressingMode>(
 fn sei<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     // disable interrupts
     c.set_cpu_flags(CpuFlags::I, true);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3802,18 +3272,10 @@ fn sei<A: AddressingMode>(
 fn shx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // get msb from target address
     let mut h = (tgt >> 8) as u8;
 
@@ -3828,7 +3290,7 @@ fn shx<A: AddressingMode>(
 
     // store
     A::store(c, d, tgt, res)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -3850,18 +3312,10 @@ fn shx<A: AddressingMode>(
 fn shy<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // get msb from target address
     let mut h = (tgt >> 8) as u8;
 
@@ -3876,7 +3330,7 @@ fn shy<A: AddressingMode>(
 
     // store
     A::store(c, d, tgt, res)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -3902,20 +3356,12 @@ fn shy<A: AddressingMode>(
 fn slo<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // perform asl + ora internally
     let prev_p = c.regs.p;
-    asl::<A>(c, d, opcode_byte, 0, false, decode_only)?;
+    asl::<A>(c, d, 0, false)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -3923,8 +3369,8 @@ fn slo<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::C, is_c_set);
 
     // other flags are set by ora
-    ora::<A>(c, d, opcode_byte, 0, false, decode_only)?;
-    Ok((A::len(), in_cycles, None))
+    ora::<A>(c, d, 0, false)?;
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3950,20 +3396,12 @@ fn slo<A: AddressingMode>(
 fn sre<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // perform lsr + eor internally
     let prev_p = c.regs.p;
-    lsr::<A>(c, d, opcode_byte, 0, false, decode_only)?;
+    lsr::<A>(c, d, 0, false)?;
 
     // preserve carry
     let is_c_set = c.is_cpu_flag_set(CpuFlags::C);
@@ -3971,8 +3409,8 @@ fn sre<A: AddressingMode>(
     c.set_cpu_flags(CpuFlags::C, is_c_set);
 
     // other flags are set by eor
-    eor::<A>(c, d, opcode_byte, 0, false, decode_only)?;
-    Ok((A::len(), in_cycles, None))
+    eor::<A>(c, d, 0, false)?;
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -3996,22 +3434,12 @@ fn sre<A: AddressingMode>(
 fn sta<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // store A in memory
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?; // store A in memory
     A::store(c, d, tgt, c.regs.a)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -4035,21 +3463,13 @@ fn sta<A: AddressingMode>(
 fn stx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // store X in memory
     A::store(c, d, tgt, c.regs.x)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -4073,21 +3493,13 @@ fn stx<A: AddressingMode>(
 fn sty<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // store y in memory
     A::store(c, d, tgt, c.regs.y)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -4109,18 +3521,10 @@ fn sty<A: AddressingMode>(
 fn tas<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // get msb from target address
     let mut h = (tgt >> 8) as u8;
 
@@ -4136,7 +3540,7 @@ fn tas<A: AddressingMode>(
 
     // store
     A::store(c, d, tgt, res)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -4163,20 +3567,12 @@ fn tas<A: AddressingMode>(
 fn tax<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     c.regs.x = c.regs.a;
     set_zn_flags(c, c.regs.x);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -4202,20 +3598,12 @@ fn tax<A: AddressingMode>(
 fn tay<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     c.regs.y = c.regs.a;
     set_zn_flags(c, c.regs.y);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -4242,19 +3630,12 @@ fn tay<A: AddressingMode>(
 fn tsx<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     c.regs.x = c.regs.s;
     set_zn_flags(c, c.regs.x);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -4281,20 +3662,12 @@ fn tsx<A: AddressingMode>(
 fn txa<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     c.regs.a = c.regs.x;
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -4321,18 +3694,11 @@ fn txa<A: AddressingMode>(
 fn txs<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     c.regs.s = c.regs.x;
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -4359,19 +3725,12 @@ fn txs<A: AddressingMode>(
 fn tya<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     c.regs.a = c.regs.y;
     set_zn_flags(c, c.regs.a);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -4399,19 +3758,10 @@ fn tya<A: AddressingMode>(
 fn xaa<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // N and Z are set according to the value of the accumulator before the instruction executed
@@ -4421,7 +3771,7 @@ fn xaa<A: AddressingMode>(
     let k = 0xef;
     let res: u8 = (c.regs.a | k) & c.regs.x & b;
     c.regs.a = res;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -4431,22 +3781,13 @@ fn xaa<A: AddressingMode>(
 fn bbr_bbs_internal<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
     bit: i8,
     name: &str,
     is_bbr: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, name)?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // get byte to test
@@ -4473,11 +3814,7 @@ fn bbr_bbs_internal<A: AddressingMode>(
         }
         c.regs.pc = new_pc;
     }
-    Ok((
-        if taken { 0 } else { A::len() },
-        in_cycles + if extra_cycle { 1 } else { 0 },
-        None,
-    ))
+    Ok((if taken { 0 } else { A::len() }, in_cycles))
 }
 
 /**
@@ -4501,18 +3838,14 @@ fn bbr_bbs_internal<A: AddressingMode>(
 fn bbr0<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         0,
         function_name!(),
         true,
@@ -4523,18 +3856,14 @@ fn bbr0<A: AddressingMode>(
 fn bbr1<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         1,
         function_name!(),
         true,
@@ -4545,18 +3874,14 @@ fn bbr1<A: AddressingMode>(
 fn bbr2<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         2,
         function_name!(),
         true,
@@ -4567,18 +3892,14 @@ fn bbr2<A: AddressingMode>(
 fn bbr3<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         3,
         function_name!(),
         true,
@@ -4589,18 +3910,14 @@ fn bbr3<A: AddressingMode>(
 fn bbr4<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         4,
         function_name!(),
         true,
@@ -4611,18 +3928,14 @@ fn bbr4<A: AddressingMode>(
 fn bbr5<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         5,
         "bbr5",
         true,
@@ -4633,18 +3946,14 @@ fn bbr5<A: AddressingMode>(
 fn bbr6<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         6,
         function_name!(),
         true,
@@ -4655,18 +3964,14 @@ fn bbr6<A: AddressingMode>(
 fn bbr7<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         7,
         function_name!(),
         true,
@@ -4677,18 +3982,14 @@ fn bbr7<A: AddressingMode>(
 fn bbs0<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         0,
         function_name!(),
         false,
@@ -4699,18 +4000,14 @@ fn bbs0<A: AddressingMode>(
 fn bbs1<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         1,
         function_name!(),
         false,
@@ -4721,18 +4018,14 @@ fn bbs1<A: AddressingMode>(
 fn bbs2<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         2,
         function_name!(),
         false,
@@ -4743,18 +4036,14 @@ fn bbs2<A: AddressingMode>(
 fn bbs3<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         3,
         function_name!(),
         false,
@@ -4765,18 +4054,14 @@ fn bbs3<A: AddressingMode>(
 fn bbs4<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         4,
         function_name!(),
         false,
@@ -4787,18 +4072,14 @@ fn bbs4<A: AddressingMode>(
 fn bbs5<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         5,
         function_name!(),
         false,
@@ -4809,18 +4090,14 @@ fn bbs5<A: AddressingMode>(
 fn bbs6<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         6,
         function_name!(),
         false,
@@ -4831,18 +4108,14 @@ fn bbs6<A: AddressingMode>(
 fn bbs7<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     bbr_bbs_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         7,
         function_name!(),
         false,
@@ -4852,23 +4125,13 @@ fn bbs7<A: AddressingMode>(
 fn rmb_smb_internal<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
     bit: i8,
     name: &str,
     is_rmb: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, name)?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
 
     if is_rmb {
@@ -4881,7 +4144,7 @@ fn rmb_smb_internal<A: AddressingMode>(
 
     // write
     A::store(c, d, tgt, b)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -4905,18 +4168,14 @@ fn rmb_smb_internal<A: AddressingMode>(
 fn rmb0<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         0,
         function_name!(),
         true,
@@ -4927,18 +4186,14 @@ fn rmb0<A: AddressingMode>(
 fn rmb1<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         1,
         function_name!(),
         true,
@@ -4949,18 +4204,14 @@ fn rmb1<A: AddressingMode>(
 fn rmb2<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         2,
         function_name!(),
         true,
@@ -4971,18 +4222,14 @@ fn rmb2<A: AddressingMode>(
 fn rmb3<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         3,
         function_name!(),
         true,
@@ -4993,18 +4240,14 @@ fn rmb3<A: AddressingMode>(
 fn rmb4<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         4,
         function_name!(),
         true,
@@ -5015,18 +4258,14 @@ fn rmb4<A: AddressingMode>(
 fn rmb5<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         5,
         function_name!(),
         true,
@@ -5037,18 +4276,14 @@ fn rmb5<A: AddressingMode>(
 fn rmb6<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         6,
         function_name!(),
         true,
@@ -5059,18 +4294,14 @@ fn rmb6<A: AddressingMode>(
 fn rmb7<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         7,
         function_name!(),
         true,
@@ -5081,18 +4312,14 @@ fn rmb7<A: AddressingMode>(
 fn smb0<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         0,
         function_name!(),
         false,
@@ -5103,18 +4330,14 @@ fn smb0<A: AddressingMode>(
 fn smb1<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         1,
         function_name!(),
         false,
@@ -5125,18 +4348,14 @@ fn smb1<A: AddressingMode>(
 fn smb2<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         2,
         function_name!(),
         false,
@@ -5147,18 +4366,14 @@ fn smb2<A: AddressingMode>(
 fn smb3<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         3,
         function_name!(),
         false,
@@ -5169,18 +4384,14 @@ fn smb3<A: AddressingMode>(
 fn smb4<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         4,
         function_name!(),
         false,
@@ -5191,18 +4402,14 @@ fn smb4<A: AddressingMode>(
 fn smb5<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         5,
         function_name!(),
         false,
@@ -5213,18 +4420,14 @@ fn smb5<A: AddressingMode>(
 fn smb6<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         6,
         function_name!(),
         false,
@@ -5235,18 +4438,14 @@ fn smb6<A: AddressingMode>(
 fn smb7<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
+) -> Result<(i8, usize), CpuError> {
     rmb_smb_internal::<A>(
         c,
         d,
-        _opcode_byte,
         in_cycles,
         extra_cycle_on_page_crossing,
-        decode_only,
         7,
         function_name!(),
         false,
@@ -5272,19 +4471,10 @@ fn smb7<A: AddressingMode>(
 fn bra<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let b = A::load(c, d, tgt)?;
 
     // branch is always taken
@@ -5298,7 +4488,7 @@ fn bra<A: AddressingMode>(
         ));
     }
     c.regs.pc = new_pc;
-    Ok((0, in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((0, in_cycles))
 }
 
 /**
@@ -5320,18 +4510,11 @@ fn bra<A: AddressingMode>(
 fn phx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     push_byte(c, d, c.regs.x)?;
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -5353,18 +4536,11 @@ fn phx<A: AddressingMode>(
 fn phy<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     push_byte(c, d, c.regs.y)?;
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -5384,19 +4560,12 @@ fn phy<A: AddressingMode>(
 fn plx<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     c.regs.x = pop_byte(c, d)?;
     set_zn_flags(c, c.regs.x);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -5416,19 +4585,12 @@ fn plx<A: AddressingMode>(
 fn ply<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
+) -> Result<(i8, usize), CpuError> {
     c.regs.y = pop_byte(c, d)?;
     set_zn_flags(c, c.regs.y);
-    Ok((A::len(), in_cycles, None))
+    Ok((A::len(), in_cycles))
 }
 
 /**
@@ -5448,19 +4610,11 @@ fn ply<A: AddressingMode>(
 fn stp<A: AddressingMode>(
     c: &mut Cpu,
     _: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     // deadlock
-    Ok((0, in_cycles, None))
+    Ok((0, in_cycles))
 }
 
 /**
@@ -5484,20 +4638,13 @@ fn stp<A: AddressingMode>(
 fn stz<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     // store
     A::store(c, d, tgt, 0)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -5526,25 +4673,17 @@ fn stz<A: AddressingMode>(
 fn trb<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
 
     let res = (b & c.regs.a) == 0;
     c.set_cpu_flags(CpuFlags::Z, res);
     b &= !(c.regs.a);
     A::store(c, d, tgt, b)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 /**
@@ -5573,46 +4712,29 @@ fn trb<A: AddressingMode>(
 fn tsb<A: AddressingMode>(
     c: &mut Cpu,
     d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-    let (tgt, extra_cycle) = A::target_address(c, extra_cycle_on_page_crossing)?;
-
-    // read operand
+) -> Result<(i8, usize), CpuError> {
+    let (tgt, cycles) = A::target_address(c, in_cycles, extra_cycle_on_page_crossing)?;
     let mut b = A::load(c, d, tgt)?;
     let res = (b & c.regs.a) == 0;
     c.set_cpu_flags(CpuFlags::Z, res);
     b |= c.regs.a;
     A::store(c, d, tgt, b)?;
-    Ok((A::len(), in_cycles + if extra_cycle { 1 } else { 0 }, None))
+    Ok((A::len(), cycles))
 }
 
 #[named]
 fn wai<A: AddressingMode>(
     c: &mut Cpu,
     _d: Option<&Debugger>,
-    _opcode_byte: u8,
     in_cycles: usize,
     _extra_cycle_on_page_crossing: bool,
-    decode_only: bool,
-) -> Result<(i8, usize, Option<String>), CpuError> {
-    if decode_only {
-        // just decode
-        let opc_string = A::repr(c, function_name!())?;
-        return Ok((A::len(), 0, Some(opc_string)));
-    }
-
+) -> Result<(i8, usize), CpuError> {
     let mut len = A::len();
     if !c.must_trigger_irq && !c.must_trigger_nmi {
         // will wait for interrupt
         len = 0;
     }
-    Ok((len, in_cycles, None))
+    Ok((len, in_cycles))
 }
