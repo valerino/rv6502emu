@@ -717,7 +717,6 @@ impl Cpu {
         // loop
         'interpreter: loop {
             // fetch
-            // Vec<( fn(c: &mut Cpu, in_cycles: usize, extra_cycle_on_page_crossing: bool) -> Result<(i8, usize), CpuError>, usize, bool, &'static str, AddressingModeId)> =
             let b = self.fetch()?;
 
             // get opcode
