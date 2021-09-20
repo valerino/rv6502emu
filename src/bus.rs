@@ -1,7 +1,7 @@
 /*
- * Filename: /src/bus.rs
+ * Filename: /src/newbus.rs
  * Project: rv6502emu
- * Created Date: 2021-08-09, 12:52:42
+ * Created Date: 2021-09-20, 08:21:22
  * Author: valerino <xoanino@gmail.com>
  * Copyright (c) 2021 valerino
  *
@@ -28,37 +28,15 @@
  * SOFTWARE.
  */
 
-use crate::memory::Memory;
+use crate::memory;
 
-/**
- * a Bus is connected to the Cpu, and must expose at least a Memory interface.
- */
-pub trait Bus {
+pub struct Bus {}
+
+impl Bus {
     /**
-     * gets the emulated memory.
+     * the bus.
      */
-    fn get_memory(&mut self) -> &mut Box<dyn Memory>;
-}
-
-/**
- * implements the default Bus exposing Memory only.
- */
-struct DefaultBus {
-    m: Box<dyn Memory>,
-}
-
-impl Bus for DefaultBus {
-    #[inline]
-    fn get_memory(&mut self) -> &mut Box<dyn Memory> {
-        let mm = &mut self.m;
-        mm
+    pub fn new() -> Self {
+        Bus {}
     }
-}
-
-/**
- * creates a new default bus with the given Memory attached.
- */
-pub fn new_default(mem: Box<dyn Memory>) -> Box<dyn Bus> {
-    let b = DefaultBus { m: mem };
-    Box::new(b)
 }
