@@ -1,3 +1,5 @@
+use crate::cpu::cpu_error::CpuError;
+
 /*
  * Filename: /src/memory.rs
  * Project: rv6502emu
@@ -27,3 +29,53 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+/**
+ * trait for the emulated memory exposed by the cpu.
+ *
+ */
+pub trait Memory {
+    /***
+     * getter
+     */
+    fn get_memory(&self) -> &Vec<u8>;
+
+    /**
+     * reads a byte at address.
+     */
+    fn read_byte(&mut self, address: usize) -> Result<u8, CpuError>;
+
+    /**
+     * reads a word (little-endian) at address.
+     */
+    fn read_word_le(&mut self, address: usize) -> Result<u16, CpuError>;
+
+    /**
+     * writes a word (little-endian) at address.
+     */
+    fn write_word_le(&mut self, address: usize, w: u16) -> Result<(), CpuError>;
+
+    /**
+     * writes a byte at address.
+     */
+    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), CpuError>;
+
+    /**
+     * get memory size.
+     */
+    fn get_size(&self) -> usize;
+
+    /**
+     * load file in memory at address. files bigger than 0xffff will be truncated.
+     */
+    fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError>;
+
+    /**
+     * fill memory with zeroes and reset cursor to 0.
+     */
+    fn clear(&mut self);
+
+    /**
+     * gets a reference to the underlying buffer.
+     */
+    fn as_vec(&self) -> &Vec<u8>;
+}

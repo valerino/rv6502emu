@@ -28,15 +28,59 @@
  * SOFTWARE.
  */
 
-use crate::memory;
+use crate::{cpu::cpu_error::CpuError, memory::Memory};
 
-pub struct Bus {}
+pub struct Bus {
+    mem_size: usize,
+    m: Vec<u8>,
+}
 
 impl Bus {
     /**
-     * the bus.
+     * creates a new Bus with 64k memory.
      */
     pub fn new() -> Self {
-        Bus {}
+        let b = Bus {
+            mem_size: 0x10000, // 64k max
+            m: Vec::new(),
+        };
+        for i in 0..b.mem_size {
+            b.m.push(0x0)
+        }
+        b
+    }
+}
+
+impl Memory for Bus {
+    fn read_byte(&mut self, address: usize) -> Result<u8, CpuError> {
+        todo!()
+    }
+
+    fn read_word_le(&mut self, address: usize) -> Result<u16, CpuError> {
+        todo!()
+    }
+
+    fn write_word_le(&mut self, address: usize, w: u16) -> Result<(), CpuError> {
+        todo!()
+    }
+
+    fn write_byte(&mut self, address: usize, b: u8) -> Result<(), CpuError> {
+        todo!()
+    }
+
+    fn get_size(&self) -> usize {
+        todo!()
+    }
+
+    fn load(&mut self, path: &str, address: usize) -> Result<(), CpuError> {
+        todo!()
+    }
+
+    fn clear(&mut self) {
+        todo!()
+    }
+
+    fn as_vec(&self) -> &Vec<u8> {
+        todo!()
     }
 }
